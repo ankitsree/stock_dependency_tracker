@@ -1,0 +1,73 @@
+"""FastAPI dependency providers — the wiring between repositories and services.
+
+This is the ONLY module allowed to import the concrete `YFinance*Repository`
+classes; every service type-hints its repository dependency as the
+`PriceRepository`/`CompanyRepository` Protocol. A future Postgres-backed
+repository only requires changing the two factory functions below.
+
+Singletons are done via `functools.lru_cache` on zero-arg (or
+hashable-args-only) functions — FastAPI's documented pattern for
+"construct once, reuse across requests" dependencies. `Config` (a pydantic
+model, not hashable without extra config) is deliberately never passed as an
+argument to an `lru_cache`d function — it's fetched with a plain call to
+`get_config()` instead, which is itself cached.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+from fastapi import Depends
+
+from src.config import Config, load_config
+from src.repositories.base import CompanyRepository, PriceRepository
+from src.repositories.yfinance_company_repository import YFinanceCompanyRepository
+from src.repositories.yfinance_price_repository import YFinancePriceRepository
+from src.services.company_service import CompanyService
+from src.services.correlation_service import CorrelationService
+from src.services.graph_service import GraphService
+from src.services.price_service import PriceService
+
+
+@lru_cache
+def get_config() -> Config:
+    return load_config()
+
+
+@lru_cache
+def get_price_repository() -> PriceRepository:
+    config = get_config()
+    return YFinancePriceRepository(config.data_dir / "cache", cache_ttl_seconds=config.price_cache_ttl_seconds)
+
+
+@lru_cache
+def get_company_repository() -> CompanyRepository:
+    config = get_config()
+    return YFinanceCompanyRepository(config.data_dir / "cache", cache_ttl_seconds=config.price_cache_ttl_seconds)
+
+
+def get_price_service(price_repo: PriceRepository = Depends(get_price_repository)) -> PriceService:
+    return PriceService(price_repo, get_config().lookback_days)
+
+
+def get_company_service(company_repo: CompanyRepository = Depends(get_company_repository)) -> CompanyService:
+    return CompanyService(company_repo)
+
+
+@lru_cache
+def get_correlation_service(
+    price_repo: PriceRepository = Depends(get_price_repository),
+    company_repo: CompanyRepository = Depends(get_company_repository),
+) -> CorrelationService:
+    # @lru_cache (not just a plain factory) matters here specifically:
+    # CorrelationService holds an in-memory result cache as instance state,
+    # which needs to survive across requests, not just across sub-dependency
+    # construction.
+    return CorrelationService(price_repo, company_repo, get_config())
+
+
+def get_graph_service(
+    correlation_service: CorrelationService = Depends(get_correlation_service),
+    company_repo: CompanyRepository = Depends(get_company_repository),
+) -> GraphService:
+    return GraphService(correlation_service, company_repo)
