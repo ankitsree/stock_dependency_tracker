@@ -44,3 +44,11 @@ class CompanyRepository(Protocol):
     ) -> pd.DataFrame:
         """ticker/market_cap/avg_volume."""
         ...
+
+    def get_company_facts(self, ticker: str, force_refresh: bool = False) -> dict:
+        """Valuation ratios (P/E, PEG, price/book, dividend yield, beta) for a
+        single ticker — the slower per-ticker `.info` fetch, kept separate from
+        the bulk `get_market_data` path. Missing ratios are None. A Postgres
+        implementation would SELECT these columns from the `companies` table.
+        """
+        ...

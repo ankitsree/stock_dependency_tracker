@@ -24,6 +24,19 @@ class CompanyProfile(BaseModel):
     sector: str
     market_cap: float | None = None
     avg_volume: float | None = None
+    # Valuation ratios, profitability metrics, and a business summary — populated
+    # only on the single-company profile lookup (get_company_profile), None in
+    # the bulk universe list.
+    trailing_pe: float | None = None
+    forward_pe: float | None = None
+    peg_ratio: float | None = None
+    price_to_book: float | None = None
+    dividend_yield: float | None = None
+    beta: float | None = None
+    ebit: float | None = None
+    profit_margin: float | None = None
+    return_on_equity: float | None = None
+    business_summary: str | None = None
 
 
 class RankedSatellite(BaseModel):

@@ -27,6 +27,9 @@ class FakeCompanyRepository:
     def get_market_data(self, tickers, force_refresh=False):
         return self.market_data[self.market_data["ticker"].isin(tickers)]
 
+    def get_company_facts(self, ticker, force_refresh=False):
+        return {}
+
 
 def _synthetic_prices(n: int = 150, seed: int = 42) -> pd.DataFrame:
     """NVDA correlates strongly with SAT_HIGH, not at all with SAT_LOW.

@@ -1,0 +1,6 @@
+/* Self-hosted Martian Mono (variable, weight axis) via @fontsource — the font
+   files are bundled from node_modules at build time, NOT loaded from a
+   render-blocking third-party CDN. The variable weight axis (300–800) lets one
+   typeface carry both headings and data through weight contrast alone, per
+   docs/frontend-build-plan.md §1. Exposes the family "Martian Mono Variable". */
+@import '@fontsource-variable/martian-mono/wght.css';

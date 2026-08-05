@@ -113,3 +113,74 @@ def fetch_metadata(
     metadata = pd.DataFrame(rows, columns=["ticker", "market_cap", "avg_volume"])
     save_parquet(metadata, cache_path)
     return metadata
+
+
+# Numeric facts (from .info, plus EBIT from the income statement); the string
+# business_summary is handled separately so it isn't coerced to a number.
+_FACTS_NUMERIC = (
+    "trailing_pe",
+    "forward_pe",
+    "peg_ratio",
+    "price_to_book",
+    "dividend_yield",
+    "beta",
+    "ebit",
+    "profit_margin",
+    "return_on_equity",
+)
+_FACTS_COLUMNS = ("ticker", *_FACTS_NUMERIC, "business_summary")
+
+
+def fetch_company_facts(
+    ticker: str,
+    cache_dir: Path,
+    max_cache_age_seconds: float | None = None,
+) -> pd.DataFrame:
+    """Fetch valuation ratios, profitability metrics, and a business summary for
+    a *single* ticker.
+
+    Deliberately separate from `fetch_metadata`: these only live in yfinance's
+    heavier `.info` (and EBIT in the income statement), so this is a slower
+    per-ticker call used only by the single-company detail path, never the bulk
+    universe fetch. On any error the affected fields are None so the profile
+    still renders. Cached like the others.
+    """
+    key = cache_key([ticker], "facts")
+    cache_path = cache_dir / f"facts_{key}.parquet"
+    cached = load_parquet(cache_path, max_age_seconds=max_cache_age_seconds)
+    if cached is not None:
+        return cached
+
+    row: dict = {"ticker": ticker, "business_summary": None, **{f: None for f in _FACTS_NUMERIC}}
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        row.update(
+            {
+                "trailing_pe": info.get("trailingPE"),
+                "forward_pe": info.get("forwardPE"),
+                "peg_ratio": info.get("trailingPegRatio"),
+                "price_to_book": info.get("priceToBook"),
+                "dividend_yield": info.get("dividendYield"),
+                "beta": info.get("beta"),
+                "profit_margin": info.get("profitMargins"),
+                "return_on_equity": info.get("returnOnEquity"),
+                "business_summary": info.get("longBusinessSummary"),
+            }
+        )
+        # EBIT is on the income statement, not in .info — a separate (also
+        # cached-downstream) call, wrapped so a failure here doesn't lose the
+        # .info fields above.
+        try:
+            stmt = stock.income_stmt
+            if stmt is not None and not stmt.empty and "EBIT" in stmt.index:
+                ebit = stmt.loc["EBIT"].iloc[0]
+                row["ebit"] = None if pd.isna(ebit) else float(ebit)
+        except Exception as exc:
+            logger.warning("Could not fetch income statement for %s: %s", ticker, exc)
+    except Exception as exc:
+        logger.warning("Could not fetch company facts for %s: %s", ticker, exc)
+
+    facts = pd.DataFrame([row], columns=list(_FACTS_COLUMNS))
+    save_parquet(facts, cache_path)
+    return facts

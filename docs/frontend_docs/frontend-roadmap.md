@@ -31,6 +31,8 @@ Work top to bottom. Steps 4–7 (the four core views) are logically independent 
 
 ## Step 0 — Define the direction (no code)
 
+**Answered — see [frontend-build-plan.md](frontend-build-plan.md)** for the locked-in decisions (including two answers that needed reconciling with each other, and the one question that went unanswered and got a reasoned default), the resulting design tokens, a rough `frontend/` file structure, and the local dev/iteration workflow. The questions below are kept as-is for reference/rationale.
+
 The most expensive mistake at this stage isn't a wrong technical choice — it's an unanswered aesthetic or scope question that a coding agent silently answers *for* you, generically. Answer these before Step 1.
 
 **1. What does "flexible" mean to you here?** It's doing three different jobs and they have very different costs:

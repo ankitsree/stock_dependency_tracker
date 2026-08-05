@@ -38,12 +38,26 @@ class CompanyService:
             raise TickerNotFoundError(ticker)
         market_row = market_data.iloc[0]
 
+        # Valuation ratios come from the separate, slower per-ticker `.info`
+        # fetch — only worth it for this single-company lookup.
+        facts = self._company_repo.get_company_facts(ticker, force_refresh=force_refresh)
+
         return CompanyProfile(
             ticker=ticker,
             name=name,
             sector=sector,
             market_cap=_clean(market_row.get("market_cap")),
             avg_volume=_clean(market_row.get("avg_volume")),
+            trailing_pe=_clean(facts.get("trailing_pe")),
+            forward_pe=_clean(facts.get("forward_pe")),
+            peg_ratio=_clean(facts.get("peg_ratio")),
+            price_to_book=_clean(facts.get("price_to_book")),
+            dividend_yield=_clean(facts.get("dividend_yield")),
+            beta=_clean(facts.get("beta")),
+            ebit=_clean(facts.get("ebit")),
+            profit_margin=_clean(facts.get("profit_margin")),
+            return_on_equity=_clean(facts.get("return_on_equity")),
+            business_summary=_clean(facts.get("business_summary")),
         )
 
 

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nohup curl -s --max-time 300 \"http://localhost:8000/api/graph\" -o /tmp/graph_warm.json)",
+      "Bash(echo \"warm started \\(pid $!\\), will check later\")"
+    ]
+  }
+}

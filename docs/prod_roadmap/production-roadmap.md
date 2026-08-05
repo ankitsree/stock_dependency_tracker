@@ -187,7 +187,7 @@ This is the phase [src/repositories/base.py](../src/repositories/base.py) was ex
 
 **What goes in Postgres, and what doesn't:**
 
-- `prices` and `companies` tables — replace the parquet cache and the hardcoded `SATELLITE_UNIVERSE` list ([src/data/universe.py](../src/data/universe.py)) with real, queryable, updatable-without-a-deploy storage.
+- `prices` and `companies` tables — replace the parquet cache and the hardcoded `SATELLITE_UNIVERSE` list ([src/data/universe.py](../src/data/universe.py)) with real, queryable, updatable-without-a-deploy storage. Note this `companies` table is also the storage substrate for **Phase 7** ([universe-roadmap.md](universe-roadmap.md)), which populates it dynamically from a screener instead of the 55-ticker list — that phase's real prerequisite is this one, which is why the `is_satellite_universe` flag below is designed for it.
 - **Not** computed correlation results. `CorrelationService`'s in-memory TTL cache already serves that cheaply, and persisting derived/recomputable analytics adds staleness/migration burden with no clear win yet. Revisit only if you run multiple API replicas and the in-memory cache becomes inconsistent across them — a real trigger, just not one that exists today.
 - **Schema sketch for a Phase 5b `watchlists` feature** (the original roadmap's Phase 5 wishlist) — worth designing now so it isn't a rework later, but not implemented in this phase; it needs light auth first (see §8).
 

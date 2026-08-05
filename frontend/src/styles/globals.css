@@ -1,0 +1,110 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Semantic design tokens (docs/frontend-build-plan.md §2).
+
+   These are the SINGLE source of truth for chrome colors and switch on the
+   `data-theme` attribute set on <html>. They are mirrored, by hand, as plain
+   constants in src/theme/tokens.ts for canvas draw calls (react-force-graph /
+   the relatedness heatmap in later steps) that can't read CSS variables.
+
+   Light = cream/beige (default), dark = espresso/cream — deliberately the same
+   warm family in both themes rather than switching to a generic slate.
+--------------------------------------------------------------------------- */
+:root {
+  --color-bg: #f7f2e9;
+  --color-surface: #fffaf0;
+  --color-ink: #2a2420;
+  --color-ink-muted: #6b6259;
+  --color-border: #e3d9c6;
+  --color-accent: #b5573a;
+  --color-accent-hover: #9c4830;
+}
+
+:root[data-theme='dark'] {
+  --color-bg: #1c1712;
+  --color-surface: #241d16;
+  --color-ink: #f0e9db;
+  --color-ink-muted: #a89e90;
+  --color-border: #352b20;
+  --color-accent: #e08a63;
+  --color-accent-hover: #f0a480;
+}
+
+/* ---------------------------------------------------------------------------
+   Expose the tokens to Tailwind as utilities. `@theme inline` inlines the
+   var() into each generated utility so theme switching keeps working via the
+   runtime variables above. Utility token names are deliberately DISTINCT from
+   the semantic var names (base/raised/content/… vs bg/surface/ink/…) to avoid
+   a self-referential `--color-x: var(--color-x)` recursion.
+
+     bg-base / bg-raised          surfaces
+     text-content / text-content-dim   text
+     border-hairline              borders
+     text-brand / bg-brand / bg-brand-hover   accent
+--------------------------------------------------------------------------- */
+@theme inline {
+  --color-base: var(--color-bg);
+  --color-raised: var(--color-surface);
+  --color-content: var(--color-ink);
+  --color-content-dim: var(--color-ink-muted);
+  --color-hairline: var(--color-border);
+  --color-brand: var(--color-accent);
+  --color-brand-hover: var(--color-accent-hover);
+
+  --font-mono: 'Martian Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html {
+  font-family: var(--font-mono);
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Detail-panel entrance animations (Step 6). A fuller motion pass is Step 9. */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.fetcher import fetch_metadata
+from src.data.fetcher import fetch_company_facts, fetch_metadata
 from src.data.universe import load_universe
 
 
@@ -31,3 +31,8 @@ class YFinanceCompanyRepository:
     ) -> pd.DataFrame:
         max_age = 0 if force_refresh else self._cache_ttl_seconds
         return fetch_metadata(tickers, self._cache_dir, max_cache_age_seconds=max_age)
+
+    def get_company_facts(self, ticker: str, force_refresh: bool = False) -> dict:
+        max_age = 0 if force_refresh else self._cache_ttl_seconds
+        facts = fetch_company_facts(ticker, self._cache_dir, max_cache_age_seconds=max_age)
+        return {} if facts.empty else facts.iloc[0].to_dict()

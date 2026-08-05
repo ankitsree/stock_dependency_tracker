@@ -19,6 +19,9 @@ class _FakeCompanyRepository:
         self.market_data_calls.append((tuple(tickers), force_refresh))
         return self._market_data[self._market_data["ticker"].isin(tickers)]
 
+    def get_company_facts(self, ticker, force_refresh=False):
+        return {}
+
 
 def _universe():
     return pd.DataFrame(
