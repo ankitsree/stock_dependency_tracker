@@ -24,21 +24,21 @@ Legend: ✅ done · 🟡 partially done · ⬜ not started.
 | **Version control** | ✅ | 2 commits on `main`, pushed to `origin/main` (`github.com/ankitsree/stock_dependency_tracker`), working tree clean. *(This was "Step 0" — now complete.)* |
 | **Backend (Phases 1–4.5)** | ✅ | Layered API + services + repositories + CLI; 142 tests pass. See [phase4-5.md](../phase4-5.md). |
 | **Frontend (Phase 5)** | 🟡 | **Built and committed** — all four views (graph, satellite table, ticker detail + sparkline, relatedness heatmap), free-text search, light/dark theme, responsive, accessible table. **Missing:** any frontend tests, a real production API URL, and deployment. See §8. |
-| **Engineering hygiene (4.6)** | ⬜ | No `ruff`/`mypy` config in `pyproject.toml`, no `.pre-commit-config.yaml`, no `Makefile`/`justfile`. |
-| **Containerization (4.7)** | ⬜ | No `Dockerfile`, `docker-compose.yml`, or `.dockerignore`. `Config` still reads only `config.yaml` — no env-var override, no secrets. |
+| **Engineering hygiene (4.6)** | ✅ | `ruff` + `mypy` configured in [pyproject.toml](../../pyproject.toml), [.pre-commit-config.yaml](../../.pre-commit-config.yaml), and a [Makefile](../../Makefile) whose targets CI will call verbatim. `make check` is green: lint, format, 46 files type-clean, 142 tests pass. |
+| **Containerization (4.7)** | ✅ | [Dockerfile](../../Dockerfile) (multi-stage, Python 3.12, non-root `appuser`), [.dockerignore](../../.dockerignore), [docker-compose.yml](../../docker-compose.yml) (API + Postgres 16, healthchecked). `Config` is now `pydantic-settings`-backed: **env wins, `config.yaml` falls back** ([src/config.py](../../src/config.py)). Verified end-to-end — see §5. |
 | **Postgres (4.8)** | ⬜ | Repository `Protocol` seam exists ([base.py](../../src/repositories/base.py)) but nothing behind it — no `sqlalchemy`/`alembic`/`psycopg`, no `src/repositories/postgres/`. Still on the hardcoded 55-ticker list + parquet cache. |
 | **CI/CD (4.9)** | ⬜ | No `.github/workflows/`. The 142 tests run only when someone remembers to. |
 | **Deployment (6)** | ⬜ | Nothing hosted. Runs on localhost only. |
-| **Secrets hygiene** | ⬜ | `.gitignore` has no `.env` entry; no `.env.example`. |
+| **Secrets hygiene** | ✅ | `.env` (and `*.local`) gitignored; [.env.example](../../.env.example) committed as the documented template. |
 | **Dynamic universe (7)** | ⬜ | Post-launch; gated on Postgres. See [universe-roadmap.md](../backend_docs/universe-roadmap.md). |
 | **Auth + watchlists (5b)** | ⬜ | Post-launch; gated on Postgres. See §8.5. |
 
 **Two doc-hygiene items** surfaced during this reconcile (cheap to fix, and they matter
 for a "clean" repo):
 
-- **Duplicate file:** `target-architecture.md` exists in **both** `docs/architecture/` and
-  `docs/prod_roadmap/`. Pick one home and delete the other (this doc links to the
-  `docs/prod_roadmap/` copy).
+- ~~**Duplicate file:** `target-architecture.md` in both `docs/architecture/` and
+  `docs/prod_roadmap/`.~~ ✅ resolved — `docs/prod_roadmap/` is the single home, and
+  `current-architecture.md` moved there alongside it.
 - **Stale index:** the root [README.md](../../README.md) doc-index and some links inside
   [phase4-5.md](../phase4-5.md) still point at the old flat `docs/*.md` paths from before
   docs were reorganized into `backend_docs/` / `frontend_docs/` / `architecture/` /
@@ -58,9 +58,9 @@ Phase numbering is kept from earlier drafts (and referenced by
 | Phase | Goal | Status | Depends on | Rough effort |
 |---|---|---|---|---|
 | ~~Step 0~~ | Version control | ✅ done | — | — |
-| **4.6** | Lint, format, type-check, pre-commit | ⬜ | Step 0 | half a day |
-| **4.7** | Docker + compose + env-var config | ⬜ | Step 0 | 1–2 days |
-| **4.8** | Postgres-backed repositories + migrations | ⬜ | 4.7 (local DB via compose) | 3–5 days |
+| **4.6** | Lint, format, type-check, pre-commit | ✅ done | Step 0 | — |
+| **4.7** | Docker + compose + env-var config | ✅ done | Step 0 | — |
+| **4.8** | Postgres-backed repositories + migrations | ⬜ **next** | 4.7 (local DB via compose — now available) | 3–5 days |
 | **4.9** | CI/CD (GitHub Actions) | ⬜ | 4.6, 4.7 | 1–2 days |
 | **5** | Frontend | 🟡 built; needs tests + prod wiring | REST API (done) | ~2–3 days remaining |
 | **6** | Deployment & operations | ⬜ | 4.7, (4.8), 4.9, 5 | 1–2 days |
@@ -81,7 +81,7 @@ flowchart LR
   DB --> POST
 
   classDef done fill:#1baf7a,stroke:#199e70,color:#fff;
-  class S0 done;
+  class S0,H,D done;
 ```
 
 **Frontend has no hard dependency on the infra track** — it only needs the (stable) API.
@@ -91,31 +91,23 @@ Its remaining work (tests, prod env, Vercel deploy) can run in parallel with 4.6
 
 ## 3. Start here — the immediate next steps
 
-Given everything above, here is the concrete order to work in. **Do 4.6 first** — it's
-half a day, and it makes the CI in 4.9 meaningful from its first run.
+~~Step 1 — Engineering hygiene (4.6)~~ and ~~Step 2 — Containerize + externalize config
+(4.7)~~ are **done** (§4, §5). The codebase is clean, containerized, and configured from
+the environment. What follows is the remaining sequence.
 
-### Step 1 — Engineering hygiene (Phase 4.6)
-The cheapest, highest-leverage move. One command each to lint, format, type-check —
-identically for you and for CI. Full detail in §4. First actions:
+### Step 1 — Postgres (Phase 4.8) ← *you are here*
+The local database already exists: `make up` gives you Postgres 16 on `localhost:5432`.
+What's missing is everything behind the repository seam — SQLAlchemy models, Alembic
+migrations, the two `Postgres*Repository` classes, and the `deps.py` cutover. `Config`
+already carries `database_url`, so the switch has somewhere to read from. Detail in §6.
 
-```bash
-# add ruff + mypy config to pyproject.toml (§4), then:
-pip install ruff mypy pre-commit
-ruff format .            # first run reformats everything — commit it ALONE
-ruff check --fix .
-mypy src
-# then wire .pre-commit-config.yaml + a Makefile/justfile (§4)
-git add -A && git commit -m "chore: add ruff/mypy/pre-commit hygiene"
-```
-
-### Step 2 — Containerize + externalize config (Phase 4.7)
-You cannot deploy or add Postgres cleanly without this. Two deliverables: a `Dockerfile`
-+ `docker-compose.yml` (API + Postgres), and **env-var config** via `pydantic-settings`
-(env wins, `config.yaml` is the fallback). Detail in §5. This is also where `.env` gets
-gitignored and `.env.example` gets committed.
+### Step 2 — CI (Phase 4.9)
+The `Makefile` targets and the `Dockerfile` both exist, so `ci.yml` is mostly assembly:
+`lint` calls `make lint-check format-check typecheck`, `test` runs `pytest` against a
+`postgres:16` service container, `build` runs `docker build`. Detail in §7.
 
 ### Step 3 — Choose your progression
-After 4.6 + 4.7 you have a clean, containerized codebase. Two honest paths to *live*:
+Two honest paths to *live*:
 
 | Path | Sequence | Trade-off |
 |---|---|---|
@@ -130,7 +122,7 @@ The rest of this document is the reference detail for each phase.
 
 ---
 
-## 4. Phase 4.6 — Engineering hygiene ⬜
+## 4. Phase 4.6 — Engineering hygiene ✅
 
 **Goal:** one command lints, one formats, one type-checks — the same commands locally and
 in CI. This is the backbone of "clean codebase."
@@ -177,37 +169,53 @@ a human runs locally.
 
 ---
 
-## 5. Phase 4.7 — Containerization + env config ⬜
+## 5. Phase 4.7 — Containerization + env config ✅
 
-**Goal:** `docker compose up` brings up API + Postgres locally with zero manual setup; a
-production `Dockerfile` builds a small, deployable image; and config comes from the
+**Goal (met):** `docker compose up` brings up API + Postgres locally with zero manual
+setup; a production `Dockerfile` builds a deployable image; and config comes from the
 environment, not just a committed YAML file.
 
-**Dockerfile (illustrative, multi-stage):**
+**What was built:** [Dockerfile](../../Dockerfile), [.dockerignore](../../.dockerignore),
+[docker-compose.yml](../../docker-compose.yml), [.env.example](../../.env.example), an
+env-aware [src/config.py](../../src/config.py), and `make docker-build` / `up` / `down` /
+`logs` targets.
 
-```dockerfile
-FROM python:3.12-slim AS builder
-WORKDIR /app
-COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+**Verified, not assumed:**
 
-FROM python:3.12-slim
-RUN useradd --create-home appuser
-WORKDIR /app
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY src/ src/
-COPY config.yaml .
-USER appuser
-EXPOSE 8000
-CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
+| Check | Result |
+|---|---|
+| `docker build` | ~70s, image 820 MB (pandas/scipy/pyarrow/matplotlib dominate) |
+| `GET /api/health` in-container | `{"status":"ok"}`; Docker `HEALTHCHECK` reaches `healthy` |
+| `docker compose up` | API waits on `pg_isready`; both services healthy; Postgres 16.14 |
+| Env override | `ANCHORS=NVDA,AMD` visibly changes the startup log |
+| CORS | allowed origin echoed back; disallowed origin gets no `access-control-allow-origin` |
+| Non-root | `uid=10001(appuser)` |
+| Live API call | `GET /api/companies/NVDA` returns real data through the container |
+
+**Config precedence.** `Config` is a `pydantic-settings` `BaseSettings`, but note that
+pydantic-settings ranks *init kwargs above env vars* — so loading YAML straight into
+`Config(**raw)` would invert the precedence we want. `load_config()` therefore drops any
+YAML key already supplied by the environment (or `.env`) and lets the settings sources
+fill it in, which also gets env values pydantic's parsing and validation for free. Env var
+names are field names upper-cased, no prefix. List-valued vars (`ANCHORS`,
+`CORS_ALLOWED_ORIGINS`) accept comma-separated *or* JSON form.
+
+**`eval_type_backport` is now conditional** — `; python_version < '3.10'`. The 3.12
+container skips it entirely (verified: the app imports fine without it there) while the
+local 3.9 venv still gets it. This closes the open question flagged below.
+
+**Deliberately deferred:** moving `MIN_OVERLAP_DAYS` / `MIN_TRADING_DAYS`
+([src/analysis/correlation.py](../../src/analysis/correlation.py)) into `Config`
+(target-architecture §4 #8). It would thread config through every pure analysis function
+and its tests for no deployment benefit; it belongs with Phase 7, when universe scale
+makes them genuinely tunable.
 
 **Key decisions:**
 - **Container on Python 3.12**, even though the local `venv` floors at 3.9. Nothing in the
-  deps needs <3.11, and a fresh container likely lets you **drop `eval_type_backport`**
-  (added only to work around a 3.9-specific pydantic/FastAPI annotation issue — see
-  [phase4-5.md](../phase4-5.md)). Verify the full dep set installs on 3.12 first; keep
-  `pyproject.toml`'s floor at 3.9 unless you want to bump it too.
+  deps needs <3.11. `eval_type_backport` (added only to work around a 3.9-specific
+  pydantic/FastAPI annotation issue — see [phase4-5.md](../phase4-5.md)) is now carried
+  behind an environment marker rather than dropped outright, so both interpreters work.
+  `pyproject.toml`'s floor stays at 3.9.
 - **Non-root user** (`appuser`) — cheap hardening for an internet-facing container.
 - **`.dockerignore`** excluding `venv/`, `data/cache/*`, `__pycache__/`, `tests/`,
   `docs/`, `.git/`, `frontend/` — keeps the build context and image small.
@@ -219,44 +227,22 @@ CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
   deployment needs (§9). It maps directly to the "nothing hardcoded" goal in
   [target-architecture.md §6](target-architecture.md).
 
-**docker-compose.yml (illustrative):**
+**The compose stack** is [docker-compose.yml](../../docker-compose.yml) — read the file
+rather than a sketch of it. Two things worth knowing without opening it:
 
-```yaml
-services:
-  api:
-    build: .
-    ports: ["8000:8000"]
-    environment:
-      DATABASE_URL: postgresql://app:app@db:5432/stockdep
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./data/cache:/app/data/cache
+- The API reaches Postgres at hostname `db`, not `localhost`: compose puts both services
+  on one network with DNS between them.
+- `depends_on: condition: service_healthy` gates API startup on `pg_isready`, so the API
+  never boots against a database still initialising.
 
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: stockdep
-    ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+`GET /api/health` is both the container `HEALTHCHECK` target and the natural probe for any
+orchestrator later. No frontend service is defined — the frontend runs via `npm run dev`
+locally and deploys to Vercel, not into compose.
 
-  # A frontend service can be added for a compose-based prod-like run (nginx
-  # serving the Vite build); in normal dev the frontend runs via `npm run dev`.
-
-volumes:
-  pgdata:
-```
-
-`GET /api/health` (already implemented) is the natural healthcheck target for the `api`
-service and for any orchestrator later.
+**The container is the API only.** The frontend is a separate deployable (§8, §9): Vercel
+builds the Vite output to a CDN. Vercel cannot host this image — it has no facility for a
+long-lived Python process. The two halves are joined by exactly two settings:
+`VITE_API_BASE_URL` (frontend → API) and `CORS_ALLOWED_ORIGINS` (API → allows frontend).
 
 ---
 
@@ -419,10 +405,15 @@ accessible standalone table. The persistent correlation-≠-causation note is in
    and a couple of components, plus **1–2 Playwright smoke tests** (load dashboard, open a
    detail panel). Matches the backend's "focused, not exhaustive" philosophy — and gives
    the frontend something for CI to run.
-2. **Production API URL.** [frontend/.env.production](../../frontend/.env.production) is a
-   `/api` placeholder — set it to the deployed API origin at build time (Vercel env var).
-3. **Deploy to Vercel** (see §9) — can and should happen early, in parallel with backend
-   infra, since it only needs an API URL.
+2. **Production API URL.** [frontend/.env.production](../../frontend/.env.production)
+   holds a same-origin `/api` fallback; the real value is set as a `VITE_API_BASE_URL`
+   env var in the Vercel project. Vite gives real environment variables precedence over
+   `.env` files, and **inlines the value at build time** — so changing it requires a
+   redeploy, and it must never hold a secret.
+3. **Deploy to Vercel** (see §9). [frontend/vercel.json](../../frontend/vercel.json) is
+   committed: framework preset, and the SPA rewrite that sends all paths to `index.html`
+   so React Router deep links survive a hard refresh (without it, `/ticker/NVDA` 404s in
+   production only). Set the Vercel project's **Root Directory to `frontend`**.
 
 > **Minor doc drift:** the original stack table named **Recharts** for sparklines; the
 > actual build uses a dependency-free SVG sparkline instead. No action needed — just don't
@@ -495,9 +486,9 @@ These all work only once §5's env-var config is in place.
 
 ### 9.5 Go-live checklist
 ```
-[ ] 4.6 hygiene green locally (ruff/mypy/pre-commit)
-[ ] 4.7 image builds; `docker compose up` runs API + Postgres
-[ ] env-var config verified (DATABASE_URL, CORS_ALLOWED_ORIGINS override YAML)
+[x] 4.6 hygiene green locally (ruff/mypy/pre-commit)
+[x] 4.7 image builds; `docker compose up` runs API + Postgres
+[x] env-var config verified (DATABASE_URL, CORS_ALLOWED_ORIGINS override YAML)
 [ ] 4.8 Postgres migrated + backfilled; DATABASE_URL cutover works
 [ ] 4.9 CI green on a PR; branch protection on
 [ ] API deployed to Render/Fly; GET /api/health returns ok
@@ -568,10 +559,14 @@ acceptance test:
 
 ## 13. What to do first (recap)
 
-1. **Phase 4.6 — hygiene.** Half a day; makes everything after it cleaner and makes CI
-   meaningful. Start with `ruff format .` as its own commit.
-2. **Phase 4.7 — Docker + env config.** Unblocks deploy, Postgres, and secrets.
-3. **Then choose your path (§3):** solid (4.8 → 4.9 → 6) or fast-demo (6 → 4.8 → 4.9).
-4. **In parallel:** add frontend tests and deploy it to Vercel — it only needs an API URL.
-5. **Quick cleanups now:** resolve the duplicate `target-architecture.md` and fix the
-   stale root-README doc-index links (§1).
+~~1. Phase 4.6 — hygiene.~~ ✅ done. ~~2. Phase 4.7 — Docker + env config.~~ ✅ done.
+
+3. **Phase 4.8 — Postgres.** The local DB is already running (`make up`); build the
+   SQLAlchemy models, Alembic migrations, and the two repositories behind the existing
+   Protocols, then flip `deps.py` on `DATABASE_URL` (§6).
+4. **Phase 4.9 — CI.** Mostly assembly now that the `Makefile` targets and `Dockerfile`
+   exist (§7).
+5. **In parallel:** add frontend tests and deploy to Vercel — it only needs an API URL,
+   and `vercel.json` is already committed (§8).
+6. **Quick cleanup still open:** the root [README.md](../../README.md) doc-index links
+   still point at the pre-reorg flat `docs/*.md` paths (§1).

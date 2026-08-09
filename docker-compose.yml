@@ -1,0 +1,54 @@
+# Local development stack: API + Postgres, one command (`docker compose up`).
+#
+# The `db` service is here ahead of the code that uses it. Phase 4.8 adds the
+# Postgres repositories; this gives them a database to be written against that
+# matches the production major version, with no Homebrew install to drift.
+#
+# Until then the API ignores DATABASE_URL and serves from yfinance + parquet
+# (src/api/deps.py keys the cutover off its presence), so `docker compose up`
+# is a working API today either way.
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Reaches the db container by service name — compose puts both on one
+      # network with DNS between them. Not a secret in local dev; in
+      # production this comes from the host's secret manager.
+      DATABASE_URL: postgresql://app:app@db:5432/stockdep
+      # Vite's dev server (5173) and the CRA-era port the frontend also allows.
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
+      LOG_LEVEL: DEBUG
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Persist the parquet cache across restarts so local iteration doesn't
+      # re-hit Yahoo every time and risk a rate limit.
+      - ./data/cache:/app/data/cache
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: stockdep
+    ports:
+      # Exposed so psql / alembic / tests can reach it from the host.
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `depends_on: service_healthy` waits on this, so the API never starts
+      # against a database that is still initialising.
+      test: ["CMD-SHELL", "pg_isready -U app -d stockdep"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:

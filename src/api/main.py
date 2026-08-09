@@ -21,7 +21,15 @@ async def lifespan(app: FastAPI):
     # here — that would make every restart slow and couple boot success to
     # Yahoo being reachable at that exact moment.
     config = deps.get_config()
-    logger.info("Starting API: anchors=%s, lookback_days=%d", config.anchors, config.lookback_days)
+    # `database_url_configured` reports the setting, not the storage in use:
+    # the repositories are still yfinance-backed until Phase 4.8 adds the
+    # Postgres ones and switches on this flag in deps.py.
+    logger.info(
+        "Starting API: anchors=%s, lookback_days=%d, database_url_configured=%s",
+        config.anchors,
+        config.lookback_days,
+        bool(config.database_url),
+    )
     yield
 
 
@@ -33,6 +41,13 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Stock Dependency Tracker API", lifespan=lifespan)
 
     config = deps.get_config()
+    # Configure the root logger here rather than at import time so tests that
+    # build an app don't fight over global logging state. LOG_LEVEL is env
+    # driven: DEBUG locally, INFO in production.
+    logging.basicConfig(
+        level=getattr(logging, config.log_level, logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_allowed_origins,

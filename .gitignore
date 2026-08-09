@@ -1,5 +1,12 @@
 venv/
 __pycache__/
+
+# Secrets — .env.example is committed as the template, real values never are.
+.env
+.env.local
+.env.*.local
+!.env.example
+
 *.pyc
 .pytest_cache/
 .DS_Store

@@ -16,7 +16,10 @@
       "Skill(update-config:*)",
       "Bash(grep -rl '```mermaid' --include='*.md' .)",
       "Bash(ls /Users/ankitsreevathsa/.vscode/extensions 2>/dev/null | grep -i -E 'mermaid|markdown' ; which code cursor 2>/dev/null)",
-      "Read(//Users/ankitsreevathsa/.vscode/extensions/**)"
+      "Read(//Users/ankitsreevathsa/.vscode/extensions/**)",
+      "Bash(docker compose *)",
+      "Bash(curl -s \"http://localhost:8000/api/companies/NVDA\")",
+      "Bash(git check-ignore *)"
     ]
   },
   "hooks": {

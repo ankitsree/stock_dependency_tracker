@@ -17,10 +17,13 @@ dependencies = [
     "pyvis>=0.3.2",
     "pyyaml>=6.0",
     "pydantic>=2.0",
+    "pydantic-settings>=2.3",
     "pyarrow>=14.0",
     "fastapi>=0.110",
     "uvicorn>=0.29",
-    "eval_type_backport>=0.2.0",
+    # Only needed to evaluate `X | None` annotations on Python 3.9, which the
+    # local venv still runs. The 3.12 container skips it via this marker.
+    "eval_type_backport>=0.2.0; python_version < '3.10'",
 ]
 
 [project.optional-dependencies]
