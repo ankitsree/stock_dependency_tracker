@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from src.api import deps
 from src.api.main import create_app
+from src.api.rate_limit import limiter
 
 
 class FakePriceRepository:
@@ -91,6 +92,12 @@ def client(fake_price_repo, fake_company_repo):
     # only the yfinance/parquet I/O boundary is faked.
     app.dependency_overrides[deps.get_price_repository] = lambda: fake_price_repo
     app.dependency_overrides[deps.get_company_repository] = lambda: fake_company_repo
+    # `limiter` is a module-level singleton shared by every app instance, and
+    # every TestClient reports the same "testclient" address — so without
+    # this, rate-limit state would accrue across unrelated tests/files and
+    # trip 429s that have nothing to do with what's under test.
+    # test_rate_limiting.py re-enables it deliberately to test the real thing.
+    limiter.enabled = False
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
