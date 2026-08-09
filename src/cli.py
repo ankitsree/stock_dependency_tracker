@@ -38,7 +38,14 @@ def main(argv: list[str] | None = None) -> None:
     subparsers.add_parser("phase2", help="multi-anchor + stability -> static graph")
     subparsers.add_parser("phase3", help="multi-anchor + stability -> interactive HTML graph")
     subparsers.add_parser("phase4", help="multi-anchor + full diagnostics -> interactive HTML graph")
+    subparsers.add_parser(
+        "backfill-postgres", help="one-off: seed Postgres companies+prices from the hardcoded universe + yfinance"
+    )
     args = parser.parse_args(argv)
+
+    if args.phase == "backfill-postgres":
+        _run_backfill_postgres(load_config())
+        return
 
     config = load_config()
     # No cache TTL for the CLI (matches the original scripts' behavior:
@@ -219,6 +226,42 @@ def _run_phase4(
             alerts_path, index=False
         )
         print(f"  -> {alerts_path}")
+
+
+def _run_backfill_postgres(config: Config) -> None:
+    """One-off seed: moves the hardcoded `SATELLITE_UNIVERSE` list and its
+    price/market-data history into Postgres. Run once after `alembic upgrade
+    head` on a fresh database — see production-roadmap.md §6 step 3. Not
+    idempotent-sensitive: every write here is an upsert, so re-running is
+    safe (just re-fetches from yfinance).
+    """
+    if not config.database_url:
+        raise SystemExit("DATABASE_URL is not set; nothing to backfill into (see .env.example).")
+
+    from src.data.universe import load_universe
+    from src.repositories.postgres.company_repository import PostgresCompanyRepository
+    from src.repositories.postgres.db import make_engine, make_session_factory
+    from src.repositories.postgres.price_repository import PostgresPriceRepository
+
+    session_factory = make_session_factory(make_engine(config.database_url))
+    company_repo = PostgresCompanyRepository(session_factory, config.data_dir / "cache", cache_ttl_seconds=None)
+    price_repo = PostgresPriceRepository(session_factory, config.data_dir / "cache", cache_ttl_seconds=None)
+
+    universe = load_universe()
+    print(f"Seeding {len(universe)} satellite-universe companies (name/sector/is_satellite_universe=true)...")
+    company_repo.upsert_universe(universe)
+
+    all_tickers = sorted(set(config.anchors) | set(universe["ticker"]))
+    print(
+        f"Backfilling {config.lookback_days}d of price history for {len(all_tickers)} tickers (anchors + universe)..."
+    )
+    prices = price_repo.get_price_history(all_tickers, config.lookback_days, force_refresh=True)
+    print(f"  -> {len(prices.columns)} tickers, {len(prices)} trading days written.")
+
+    print("Backfilling market cap / volume metadata...")
+    company_repo.get_market_data(all_tickers, force_refresh=True)
+
+    print("Backfill complete.")
 
 
 def _graphed_tickers(active_anchors: list[str], anchor_rankings: dict[str, pd.DataFrame]) -> list[str]:

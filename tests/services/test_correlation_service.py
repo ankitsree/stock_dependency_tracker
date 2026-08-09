@@ -193,3 +193,34 @@ def test_top_n_and_threshold_overrides_respected():
     service, _ = _service()
     ranked = service.rank_correlations("ANCHOR", top_n=1, threshold=0.0)
     assert len(ranked) == 1
+
+
+def test_prefetch_prices_fetches_union_of_anchors_universe_and_proxies_once():
+    service, price_repo = _service()
+
+    service.prefetch_prices(["ANCHOR", "OTHER_ANCHOR"])
+
+    assert len(price_repo.calls) == 1
+    fetched_tickers, lookback_days, force_refresh = price_repo.calls[0]
+    assert set(fetched_tickers) == {"ANCHOR", "OTHER_ANCHOR", "SAT_HIGH", "SAT_LOW", "MARKET", "SOXX", "XLK"}
+    assert lookback_days == 150
+    assert force_refresh is False
+
+
+def test_rank_with_full_diagnostics_reuses_prefetched_prices_without_refetching():
+    service, price_repo = _service()
+    prefetched = service.prefetch_prices(["ANCHOR"])
+    fetch_count_after_prefetch = len(price_repo.calls)
+
+    result = service.rank_with_full_diagnostics("ANCHOR", prefetched_prices=prefetched)
+
+    assert len(price_repo.calls) == fetch_count_after_prefetch  # no additional fetch
+    assert not result.satellites.empty
+
+
+def test_rank_with_full_diagnostics_prefetched_prices_missing_anchor_raises():
+    service, _ = _service()
+    prefetched = service.prefetch_prices(["OTHER_ANCHOR"])  # doesn't include "ANCHOR"
+
+    with pytest.raises(TickerNotFoundError):
+        service.rank_with_full_diagnostics("ANCHOR", prefetched_prices=prefetched)

@@ -1,17 +1,16 @@
-# Render Blueprint — infrastructure as code for the API service.
+# Render Blueprint — infrastructure as code for the API service + database.
 #
 # Declaring the service here rather than clicking through the dashboard means
 # the deployment config is reviewable, diffable, and reproducible. Render reads
-# this file when you create a Blueprint from the repo, and on every push after.
+# this file when you create/sync a Blueprint from the repo.
 #
-# STAGE 1 (this file today): the API only, serving from yfinance + the parquet
-# cache. Deliberately no database yet — the Postgres repositories land in Phase
-# 4.8, and a free Render database is time-boxed from creation, so there is no
-# point spending that window on an idle DB. The Stage 3 additions are written
-# out at the bottom, commented, so turning them on is a small diff.
+# STAGE 2 (this file now): API + a managed Postgres. src/api/deps.py switches
+# to the Postgres repositories automatically once DATABASE_URL is set — no
+# code change needed here, only this file and two manual steps after deploy
+# (migrate, backfill — see the comments below and production-roadmap.md §6).
 #
 # NOTE: Render's blueprint schema changes over time (`env:` became `runtime:`,
-# plan names have shifted). If `render.yaml` is rejected at Blueprint creation,
+# plan names have shifted). If `render.yaml` is rejected at Blueprint sync,
 # check the current spec at https://render.com/docs/blueprint-spec — the intent
 # of each key below is documented inline so it is easy to re-map.
 #
@@ -25,17 +24,18 @@ services:
     branch: main
     autoDeploy: true
 
-    # Must match the database's region once Stage 3 adds one, otherwise the
-    # internal connection string won't resolve and traffic would have to leave
-    # Render's network. Change both together, or neither.
+    # Must equal the database's region below — otherwise DATABASE_URL's
+    # internal hostname won't resolve, or traffic leaves Render's network.
     region: oregon
 
-    # `free` spins the service down after ~15 minutes idle. On wake, both the
-    # in-memory result cache and the container's parquet cache are gone, so the
-    # first request re-fetches every ticker from Yahoo — slow, and a rate-limit
-    # risk. Acceptable while this is a demo; `starter` removes the spin-down,
-    # and Phase 4.8 removes the re-fetch. Watch memory either way: this image
-    # loads pandas + scipy + networkx.
+    # `free` spins the service down after ~15 minutes idle. Before this
+    # stage that meant every wake re-fetched the whole universe from Yahoo
+    # (see the dedup fix in CorrelationService.prefetch_prices for the worst
+    # of it); now cold starts read warm rows from Postgres instead, so `free`
+    # is far less painful than in Stage 1 — but a spun-down free plan also
+    # can't run `preDeployCommand` (see below), so migrations become a manual
+    # step. `starter` removes both issues; upgrade if that manual step gets
+    # old.
     plan: free
 
     dockerfilePath: ./Dockerfile
@@ -45,6 +45,14 @@ services:
     # implemented (src/api/routers/health.py) and also used as the Dockerfile's
     # own HEALTHCHECK.
     healthCheckPath: /api/health
+
+    # Runs `alembic upgrade head` before the new instance takes traffic —
+    # the production equivalent of the `docker compose exec api alembic
+    # upgrade head` step used locally. UNCOMMENT ONLY AFTER upgrading off
+    # the `free` plan: Pre-Deploy Commands aren't available on it, and Render
+    # will reject the blueprint sync with this present while `plan: free`.
+    # Until then, run migrations manually — see the comment block below.
+    # preDeployCommand: alembic upgrade head
 
     envVars:
       - key: LOG_LEVEL
@@ -58,37 +66,38 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         sync: false
 
+      # `fromDatabase` injects the connection string at deploy time — it's
+      # never typed into a dashboard field or committed here. Render's value
+      # starts `postgresql://`; src/repositories/postgres/db.py rewrites
+      # that to `postgresql+psycopg://` for SQLAlchemy, so no action needed.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stockdep-db
+          property: connectionString
+
     # Deliberately absent: PORT and a start command. Render injects PORT, and
     # the Dockerfile's CMD already binds ${PORT:-8000}.
 
-# --- STAGE 3: uncomment once Phase 4.8's Postgres repositories exist ---------
+databases:
+  - name: stockdep-db
+    plan: basic-256mb
+    postgresMajorVersion: "16"
+    region: oregon
+
+# --- Manual steps after the first sync with this database block -----------
 #
-# Adding the block below (plus the DATABASE_URL envVar) is the whole cutover —
-# src/api/deps.py switches on DATABASE_URL being set, and src/config.py already
-# carries the field.
+# Render creates empty `companies`/`prices` tables for you — nothing runs
+# `alembic upgrade head` automatically unless `preDeployCommand` is active
+# (needs a paid web-service plan; see above). Until then, after each deploy
+# that changes the schema:
 #
-# Two things to get right:
-#   1. `region` must equal the web service's region above.
-#   2. Render's connection string starts `postgresql://`. SQLAlchemy with
-#      psycopg v3 expects `postgresql+psycopg://` — normalise the scheme when
-#      building the engine, or it will work locally and fail only on Render.
+#   1. Render dashboard -> stockdep-api -> Shell tab -> run:
+#        alembic upgrade head
+#      (One-off jobs also work: dashboard -> Jobs -> Run Job, same command,
+#      same environment as the web service.)
+#   2. First time only — seed the universe + price history:
+#        python -m src.cli backfill-postgres
+#      Safe to re-run; every write is an upsert (see src/cli.py).
 #
-# Also set the service's Pre-Deploy Command to `alembic upgrade head` so
-# migrations run before the new instance takes traffic. (Pre-deploy commands
-# are not available on the free plan.)
-#
-# databases:
-#   - name: stockdep-db
-#     plan: basic-256mb
-#     postgresMajorVersion: "16"
-#     region: oregon
-#
-# ...and under the service's envVars:
-#
-#       - key: DATABASE_URL
-#         fromDatabase:
-#           name: stockdep-db
-#           property: connectionString
-#
-# `fromDatabase` injects the credential at deploy time, so the connection
-# string is never typed into a dashboard field or committed here.
+# Once `preDeployCommand` is active, step 1 happens automatically on every
+# deploy; step 2 still only needs to run once.

@@ -26,7 +26,7 @@ Legend: ✅ done · 🟡 partially done · ⬜ not started.
 | **Frontend (Phase 5)** | 🟡 | **Built and committed** — all four views (graph, satellite table, ticker detail + sparkline, relatedness heatmap), free-text search, light/dark theme, responsive, accessible table. **Missing:** any frontend tests, a real production API URL, and deployment. See §8. |
 | **Engineering hygiene (4.6)** | ✅ | `ruff` + `mypy` configured in [pyproject.toml](../../pyproject.toml), [.pre-commit-config.yaml](../../.pre-commit-config.yaml), and a [Makefile](../../Makefile) whose targets CI will call verbatim. `make check` is green: lint, format, 46 files type-clean, 142 tests pass. |
 | **Containerization (4.7)** | ✅ | [Dockerfile](../../Dockerfile) (multi-stage, Python 3.12, non-root `appuser`), [.dockerignore](../../.dockerignore), [docker-compose.yml](../../docker-compose.yml) (API + Postgres 16, healthchecked). `Config` is now `pydantic-settings`-backed: **env wins, `config.yaml` falls back** ([src/config.py](../../src/config.py)). Verified end-to-end — see §5. |
-| **Postgres (4.8)** | ⬜ | Repository `Protocol` seam exists ([base.py](../../src/repositories/base.py)) but nothing behind it — no `sqlalchemy`/`alembic`/`psycopg`, no `src/repositories/postgres/`. Still on the hardcoded 55-ticker list + parquet cache. |
+| **Postgres (4.8)** | ✅ | [src/repositories/postgres/](../../src/repositories/postgres/) — `PostgresPriceRepository`/`PostgresCompanyRepository` satisfy the existing Protocols exactly; [deps.py](../../src/api/deps.py) cuts over on `DATABASE_URL` presence. Alembic migration applied and verified against real Postgres (17 repository tests + full backfill against live Yahoo data). **Not yet done on Render** — see §6.1. |
 | **CI/CD (4.9)** | ⬜ | No `.github/workflows/`. The 142 tests run only when someone remembers to. |
 | **Deployment (6)** | ⬜ | Nothing hosted. Runs on localhost only. |
 | **Secrets hygiene** | ✅ | `.env` (and `*.local`) gitignored; [.env.example](../../.env.example) committed as the documented template. |
@@ -60,7 +60,7 @@ Phase numbering is kept from earlier drafts (and referenced by
 | ~~Step 0~~ | Version control | ✅ done | — | — |
 | **4.6** | Lint, format, type-check, pre-commit | ✅ done | Step 0 | — |
 | **4.7** | Docker + compose + env-var config | ✅ done | Step 0 | — |
-| **4.8** | Postgres-backed repositories + migrations | ⬜ **next** | 4.7 (local DB via compose — now available) | 3–5 days |
+| **4.8** | Postgres-backed repositories + migrations | ✅ done locally; **Render setup next** | 4.7 (local DB via compose) | — |
 | **4.9** | CI/CD (GitHub Actions) | ⬜ | 4.6, 4.7 | 1–2 days |
 | **5** | Frontend | 🟡 built; needs tests + prod wiring | REST API (done) | ~2–3 days remaining |
 | **6** | Deployment & operations | ⬜ | 4.7, (4.8), 4.9, 5 | 1–2 days |
@@ -81,8 +81,13 @@ flowchart LR
   DB --> POST
 
   classDef done fill:#1baf7a,stroke:#199e70,color:#fff;
+  classDef partial fill:#eda100,stroke:#c98500,color:#000;
   class S0,H,D done;
+  class DB partial;
 ```
+
+`DB` is amber, not green: the code is done and verified locally, but the Render database
+itself isn't created yet — see §6.1.
 
 **Frontend has no hard dependency on the infra track** — it only needs the (stable) API.
 Its remaining work (tests, prod env, Vercel deploy) can run in parallel with 4.6–4.9.
@@ -95,11 +100,12 @@ Its remaining work (tests, prod env, Vercel deploy) can run in parallel with 4.6
 (4.7)~~ are **done** (§4, §5). The codebase is clean, containerized, and configured from
 the environment. What follows is the remaining sequence.
 
-### Step 1 — Postgres (Phase 4.8) ← *you are here*
-The local database already exists: `make up` gives you Postgres 16 on `localhost:5432`.
-What's missing is everything behind the repository seam — SQLAlchemy models, Alembic
-migrations, the two `Postgres*Repository` classes, and the `deps.py` cutover. `Config`
-already carries `database_url`, so the switch has somewhere to read from. Detail in §6.
+### Step 1 — Postgres (Phase 4.8) ✅ done locally
+SQLAlchemy models, an Alembic migration, `PostgresPriceRepository`/`PostgresCompanyRepository`,
+and the `deps.py` cutover all exist and are verified against a real Postgres — 17 repository
+tests plus a full backfill against live Yahoo data. `make up` gives you the same Postgres 16
+locally. **Not yet applied on Render** — creating the Render database, running the migration,
+and backfilling there is the immediate next step. Detail in §6.1.
 
 ### Step 2 — CI (Phase 4.9)
 The `Makefile` targets and the `Dockerfile` both exist, so `ci.yml` is mostly assembly:
@@ -246,7 +252,7 @@ long-lived Python process. The two halves are joined by exactly two settings:
 
 ---
 
-## 6. Phase 4.8 — Postgres migration ⬜
+## 6. Phase 4.8 — Postgres migration ✅ (locally) / next: Render
 
 The phase [src/repositories/base.py](../../src/repositories/base.py) was explicitly built
 for:
@@ -263,17 +269,24 @@ for:
 - **Not** computed correlation results. The in-memory TTL cache serves those cheaply;
   persisting recomputable analytics adds staleness/migration cost with no win until
   multi-replica inconsistency is real.
+- **Not** valuation ratios either (P/E, PEG, beta, business summary, ...) — never in this
+  schema, so `PostgresCompanyRepository.get_company_facts()` goes straight to yfinance,
+  same as the yfinance-backed repository. A single-ticker detail-view fact, not
+  universe/graph data; adding a wide, rarely-queried column set to `companies` for one
+  slow per-ticker endpoint wasn't worth it.
 - **`watchlists` sketch only** (Phase 5b, §8.5) — designed now so it isn't a rework later,
   but not built here; it needs light auth first.
 
-**Schema (illustrative):**
+**Schema** — as built, in [migrations/versions/](../../migrations/versions/) (autogenerated
+from [src/repositories/postgres/models.py](../../src/repositories/postgres/models.py) and
+diffed by eye against the sketch below before applying):
 
 ```sql
 CREATE TABLE companies (
     ticker TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     sector TEXT NOT NULL,
-    industry TEXT,                          -- drives the graph color group (Phase 7)
+    industry TEXT,                          -- unused until Phase 7's screener job
     market_cap DOUBLE PRECISION,
     avg_volume DOUBLE PRECISION,
     is_satellite_universe BOOLEAN NOT NULL DEFAULT false,
@@ -289,7 +302,7 @@ CREATE TABLE prices (
     fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (ticker, date)
 );
-CREATE INDEX idx_prices_ticker_date ON prices (ticker, date);
+CREATE INDEX idx_prices_ticker ON prices (ticker);
 
 -- Phase 5b sketch only — not built in 4.8
 -- CREATE TABLE watchlists (id, user_id, name, created_at);
@@ -316,19 +329,66 @@ never in the universe). `list_universe()` is the one query that filters on the f
   the price-refresh job in §9-of-target) keeps rows fresh using `price_cache_ttl_seconds`
   against each row's `fetched_at`.
 - **Upsert, don't insert-and-fail** — `ON CONFLICT DO UPDATE` on both tables.
+- **Batch upserts at 2000 rows** ([price_repository.py](../../src/repositories/postgres/price_repository.py)
+  `_UPSERT_BATCH_SIZE`) — Postgres caps bound parameters at 65535/query, and a full
+  backfill (tens of tickers x a year of trading days) blows past that in one INSERT.
+  Found by actually running the backfill against live data, not anticipated up front —
+  covered by a regression test (`test_upsert_spanning_multiple_batches_writes_every_row`).
+- **A ticker with no `companies` row yet gets a placeholder** (`name=ticker,
+  sector="Unknown"`) before its price rows can satisfy the FK — e.g. an anchor never in
+  the curated universe. `ON CONFLICT DO NOTHING` on that placeholder insert, so it never
+  clobbers a real name/sector already seeded by the universe backfill. This matches
+  behavior the yfinance-backed system already had (`CompanyService.get_company_profile()`
+  already fell back to `name=ticker, sector="Unknown"` for any non-universe ticker) —
+  not a new behavior, just a new place it has to be written down.
 - **Keep `data/cache/*.parquet`** as an offline/test fallback; just stop it being the only
   store.
 
-**Step-by-step:**
-1. Add `PostgresPriceRepository`/`PostgresCompanyRepository` implementing the two
-   `Protocol`s exactly — no service/router changes, by design.
-2. Add Alembic; first migration creates `companies`/`prices` with the indexes/constraints.
-3. Write a one-off backfill (`python -m src.cli backfill-postgres`) that reads today's
-   parquet cache / re-fetches via yfinance and seeds Postgres.
-4. Swap the two factory functions in `deps.py` behind the `DATABASE_URL` check.
-5. Local dev DB comes from §5's compose `db` service; document `alembic upgrade head`.
-6. **Test against a real Postgres, not mocks** — mirror the existing
-   `tests/repositories/` pattern against an ephemeral DB (4.9's CI spins one up natively).
+**What was built** (mirrors the plan above, one addition it surfaced):
+1. `PostgresPriceRepository`/`PostgresCompanyRepository`
+   ([src/repositories/postgres/](../../src/repositories/postgres/)) implement the two
+   `Protocol`s exactly — no service/router changes.
+2. Alembic ([alembic.ini](../../alembic.ini), [migrations/](../../migrations/)); one
+   migration creates `companies`/`prices` with the indexes/constraints, autogenerated
+   from the SQLAlchemy models and applied against the compose `db`.
+3. `python -m src.cli backfill-postgres` ([src/cli.py](../../src/cli.py)) seeds the
+   universe (real name/sector, `is_satellite_universe=true`) then backfills price
+   history + market data for anchors + universe, via the same
+   `fetch_price_history`/`fetch_metadata` the yfinance repository uses — Postgres gets a
+   durable upsert in addition, not a different fetch path.
+4. `deps.py`'s two factory functions cut over on `DATABASE_URL` presence, sharing one
+   engine/session factory (`get_session_factory()`) rather than one each.
+5. **Verified against a real Postgres, not mocks** — 17 tests in
+   [tests/repositories/postgres/](../../tests/repositories/postgres/), skipped (not
+   failed) when no `DATABASE_URL` is reachable so a plain `pytest -q` still passes
+   without Docker running. Plus a full manual run: `make up` → `alembic upgrade head` →
+   `backfill-postgres` against live Yahoo data → `GET /api/graph` through the container,
+   confirmed serving from Postgres (`database_url_configured=true` in the startup log).
+
+### 6.1 Doing this on Render — the remaining step
+
+Local Postgres (§5's compose `db`) has worked against this code since before it was
+written; the render.yaml blueprint from Stage 1 only ever declared the API service.
+Adding the database is now a blueprint change, not a new capability:
+
+1. **Sync the updated `render.yaml`** — Render dashboard → the `stockdep-api` Blueprint →
+   it detects `databases: [stockdep-db]` and the new `DATABASE_URL` env var (wired via
+   `fromDatabase`, so no credential is ever typed in) → apply. Creates a managed Postgres
+   16 in the same region as the API.
+2. **Run the migration.** `render.yaml`'s `preDeployCommand` is present but commented —
+   Pre-Deploy Commands need a paid web-service plan, and the service is still on `free`
+   from Stage 1. Until upgrading, run it manually: Render dashboard → `stockdep-api` →
+   **Shell** tab → `alembic upgrade head`.
+3. **Backfill once:** same Shell tab → `python -m src.cli backfill-postgres`. Safe to
+   re-run (everything is an upsert); only needs to happen once to seed real data.
+4. **Verify:** `GET /api/companies` should return 55 companies: cutover confirmed working
+   the moment that list is non-empty, since `list_universe()` has no yfinance fallback
+   by design (§6, "what doesn't" go through Postgres wasn't the point here — the universe
+   *only* comes from the DB now).
+5. **Optional — upgrade off `free`.** Removes the ~15-minute spin-down (now much less
+   costly than in Stage 1, since a cold start reads from Postgres instead of Yahoo) and
+   unlocks `preDeployCommand`, automating step 2 on every future deploy. Uncomment that
+   line in `render.yaml` after upgrading.
 
 ---
 

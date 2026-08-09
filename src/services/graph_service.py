@@ -26,6 +26,12 @@ class GraphService:
         threshold: float | None = None,
         force_refresh: bool = False,
     ) -> nx.Graph:
+        # Fetched once for every anchor up front rather than letting each
+        # anchor's own ranking call fetch it separately — see
+        # CorrelationService.prefetch_prices for why that matters (it's the
+        # difference between one Yahoo download and one per anchor).
+        prefetched_prices = self._correlation_service.prefetch_prices(anchors, force_refresh=force_refresh)
+
         anchor_rankings: dict[str, pd.DataFrame] = {}
         for anchor in anchors:
             try:
@@ -35,6 +41,7 @@ class GraphService:
                     top_n=top_n,
                     threshold=threshold,
                     force_refresh=force_refresh,
+                    prefetched_prices=prefetched_prices,
                 )
             except TickerNotFoundError:
                 logger.warning("Skipping anchor %s in graph build: no price data available", anchor)

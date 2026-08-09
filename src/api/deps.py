@@ -1,9 +1,12 @@
 """FastAPI dependency providers — the wiring between repositories and services.
 
-This is the ONLY module allowed to import the concrete `YFinance*Repository`
-classes; every service type-hints its repository dependency as the
-`PriceRepository`/`CompanyRepository` Protocol. A future Postgres-backed
-repository only requires changing the two factory functions below.
+This is the ONLY module allowed to import the concrete `YFinance*Repository`/
+`Postgres*Repository` classes; every service type-hints its repository
+dependency as the `PriceRepository`/`CompanyRepository` Protocol. The Phase
+4.8 Postgres cutover (production-roadmap.md §6) lives entirely here: if
+`DATABASE_URL` is set, `get_price_repository`/`get_company_repository` build
+Postgres-backed repositories instead of the yfinance-backed ones — no
+service, router, or schema changes required, by design.
 
 Singletons are done via `functools.lru_cache` on zero-arg (or
 hashable-args-only) functions — FastAPI's documented pattern for
@@ -18,9 +21,13 @@ from __future__ import annotations
 from functools import lru_cache
 
 from fastapi import Depends
+from sqlalchemy.orm import sessionmaker
 
 from src.config import Config, load_config
 from src.repositories.base import CompanyRepository, PriceRepository
+from src.repositories.postgres.company_repository import PostgresCompanyRepository
+from src.repositories.postgres.db import make_engine, make_session_factory
+from src.repositories.postgres.price_repository import PostgresPriceRepository
 from src.repositories.yfinance_company_repository import YFinanceCompanyRepository
 from src.repositories.yfinance_price_repository import YFinancePriceRepository
 from src.services.company_service import CompanyService
@@ -35,14 +42,36 @@ def get_config() -> Config:
 
 
 @lru_cache
+def get_session_factory() -> sessionmaker | None:
+    """`None` when DATABASE_URL isn't set — the one place the Postgres
+    cutover is decided (Phase 4.8). One engine/session factory shared by both
+    repositories below, not one each.
+    """
+    config = get_config()
+    if not config.database_url:
+        return None
+    return make_session_factory(make_engine(config.database_url))
+
+
+@lru_cache
 def get_price_repository() -> PriceRepository:
     config = get_config()
+    session_factory = get_session_factory()
+    if session_factory is not None:
+        return PostgresPriceRepository(
+            session_factory, config.data_dir / "cache", cache_ttl_seconds=config.price_cache_ttl_seconds
+        )
     return YFinancePriceRepository(config.data_dir / "cache", cache_ttl_seconds=config.price_cache_ttl_seconds)
 
 
 @lru_cache
 def get_company_repository() -> CompanyRepository:
     config = get_config()
+    session_factory = get_session_factory()
+    if session_factory is not None:
+        return PostgresCompanyRepository(
+            session_factory, config.data_dir / "cache", cache_ttl_seconds=config.price_cache_ttl_seconds
+        )
     return YFinanceCompanyRepository(config.data_dir / "cache", cache_ttl_seconds=config.price_cache_ttl_seconds)
 
 

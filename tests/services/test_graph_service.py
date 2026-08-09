@@ -9,9 +9,16 @@ class _FakeCorrelationService:
         self._rankings = rankings
         self._missing = missing
         self.calls = []
+        self.prefetch_calls = []
 
-    def rank_with_full_diagnostics(self, anchor, exclude_tickers=None, top_n=None, threshold=None, force_refresh=False):
-        self.calls.append((anchor, exclude_tickers, force_refresh))
+    def prefetch_prices(self, anchors, force_refresh=False):
+        self.prefetch_calls.append((tuple(anchors), force_refresh))
+        return "PREFETCHED_PRICES"
+
+    def rank_with_full_diagnostics(
+        self, anchor, exclude_tickers=None, top_n=None, threshold=None, force_refresh=False, prefetched_prices=None
+    ):
+        self.calls.append((anchor, exclude_tickers, force_refresh, prefetched_prices))
         if anchor in self._missing:
             raise TickerNotFoundError(anchor)
         return _FakeResult(
@@ -55,9 +62,21 @@ def test_build_graph_excludes_all_anchors_from_each_others_candidate_pool():
 
     graph_service.build_graph(["NVDA", "TSM", "ASML"])
 
-    anchor, exclude_tickers, _ = correlation_service.calls[0]
+    anchor, exclude_tickers, _, _ = correlation_service.calls[0]
     assert anchor == "NVDA"
     assert exclude_tickers == {"NVDA", "TSM", "ASML"}
+
+
+def test_build_graph_prefetches_prices_once_and_reuses_across_anchors():
+    correlation_service = _FakeCorrelationService({"NVDA": _ranked("SAT1"), "TSM": _ranked("SAT2")})
+    graph_service = GraphService(correlation_service, _FakeCompanyRepository())
+
+    graph_service.build_graph(["NVDA", "TSM"])
+
+    # One prefetch for the whole build, not one per anchor — this is the fix
+    # for the redundant per-anchor Yahoo downloads.
+    assert correlation_service.prefetch_calls == [(("NVDA", "TSM"), False)]
+    assert all(call[3] == "PREFETCHED_PRICES" for call in correlation_service.calls)
 
 
 def test_build_graph_skips_anchor_with_no_data_instead_of_failing():

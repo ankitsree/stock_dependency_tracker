@@ -21,9 +21,9 @@ async def lifespan(app: FastAPI):
     # here — that would make every restart slow and couple boot success to
     # Yahoo being reachable at that exact moment.
     config = deps.get_config()
-    # `database_url_configured` reports the setting, not the storage in use:
-    # the repositories are still yfinance-backed until Phase 4.8 adds the
-    # Postgres ones and switches on this flag in deps.py.
+    # `database_url_configured` doubles as the storage backend indicator:
+    # deps.py builds Postgres-backed repositories when it's True, yfinance +
+    # parquet ones when it's False.
     logger.info(
         "Starting API: anchors=%s, lookback_days=%d, database_url_configured=%s",
         config.anchors,

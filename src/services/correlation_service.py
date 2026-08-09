@@ -118,6 +118,7 @@ class CorrelationService:
         top_n: int | None = None,
         threshold: float | None = None,
         force_refresh: bool = False,
+        prefetched_prices: pd.DataFrame | None = None,
     ) -> DiagnosticsResult:
         top_n, threshold = self._resolve_defaults(top_n, threshold)
         cache_key = (anchor, frozenset(exclude_tickers or ()), top_n, threshold)
@@ -127,10 +128,34 @@ class CorrelationService:
             if cached is not None and (time.time() - cached.generated_at.timestamp()) < self._result_cache_ttl_seconds:
                 return DiagnosticsResult(cached.anchor, cached.satellites, cached.generated_at, cache_hit=True)
 
-        satellites = self._compute_full_diagnostics(anchor, exclude_tickers, top_n, threshold, force_refresh)
+        satellites = self._compute_full_diagnostics(
+            anchor, exclude_tickers, top_n, threshold, force_refresh, prefetched_prices
+        )
         result = DiagnosticsResult(anchor, satellites, dt.datetime.now(dt.timezone.utc), cache_hit=False)
         self._result_cache[cache_key] = result
         return result
+
+    def prefetch_prices(self, anchors: list[str], force_refresh: bool = False) -> pd.DataFrame:
+        """Fetch price history once for every ticker a `rank_with_full_diagnostics`
+        call for any of `anchors` would need: all the anchors themselves, the
+        full satellite universe, the market proxy, and every sector ETF.
+
+        Exists because `_fetch_returns`'s cache key is the sorted ticker list
+        *including the anchor* — looping per-anchor without this (as
+        GraphService.build_graph does) fetches the same ~55-ticker universe
+        once per anchor, since each anchor produces a different ticker set
+        and therefore a different cache key. A caller that knows all the
+        anchors up front can fetch this union once and pass it to each
+        `rank_with_full_diagnostics(..., prefetched_prices=...)` call instead.
+        """
+        universe = self._company_repo.list_universe()
+        sector_etf_tickers = sorted(set(SECTOR_ETF_MAP.values()))
+        all_tickers = list(
+            dict.fromkeys(
+                [*anchors, *universe["ticker"].tolist(), self._config.market_proxy_ticker, *sector_etf_tickers]
+            )
+        )
+        return self._price_repo.get_price_history(all_tickers, self._config.lookback_days, force_refresh=force_refresh)
 
     def _compute_full_diagnostics(
         self,
@@ -139,11 +164,14 @@ class CorrelationService:
         top_n: int,
         threshold: float,
         force_refresh: bool,
+        prefetched_prices: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
         sector_etf_tickers = sorted(set(SECTOR_ETF_MAP.values()))
         extra_tickers = [self._config.market_proxy_ticker, *sector_etf_tickers]
 
-        returns, universe = self._fetch_returns(anchor, extra_tickers=extra_tickers, force_refresh=force_refresh)
+        returns, universe = self._fetch_returns(
+            anchor, extra_tickers=extra_tickers, force_refresh=force_refresh, prefetched_prices=prefetched_prices
+        )
         if self._config.market_proxy_ticker not in returns.columns:
             raise InsufficientDataError(anchor, f"no data for market proxy {self._config.market_proxy_ticker!r}")
         missing_etfs = set(sector_etf_tickers) - set(returns.columns)
@@ -207,14 +235,21 @@ class CorrelationService:
         )
 
     def _fetch_returns(
-        self, anchor: str, extra_tickers: list[str], force_refresh: bool
+        self,
+        anchor: str,
+        extra_tickers: list[str],
+        force_refresh: bool,
+        prefetched_prices: pd.DataFrame | None = None,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         universe = self._company_repo.list_universe()
-        satellite_tickers = universe["ticker"].tolist()
-        all_tickers = list(dict.fromkeys([anchor, *satellite_tickers, *extra_tickers]))
-        prices = self._price_repo.get_price_history(
-            all_tickers, self._config.lookback_days, force_refresh=force_refresh
-        )
+        if prefetched_prices is not None:
+            prices = prefetched_prices
+        else:
+            satellite_tickers = universe["ticker"].tolist()
+            all_tickers = list(dict.fromkeys([anchor, *satellite_tickers, *extra_tickers]))
+            prices = self._price_repo.get_price_history(
+                all_tickers, self._config.lookback_days, force_refresh=force_refresh
+            )
         if anchor not in prices.columns:
             raise TickerNotFoundError(anchor)
         return compute_log_returns(prices), universe

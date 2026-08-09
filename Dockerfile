@@ -45,6 +45,10 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY src/ ./src/
 COPY config.yaml ./
+# Needed to run `alembic upgrade head` inside the container — e.g. as
+# Render's Pre-Deploy Command (production-roadmap.md §6 step 5).
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
 
 # config.yaml supplies defaults only; anything environment-specific
 # (CORS_ALLOWED_ORIGINS, DATABASE_URL, LOG_LEVEL) is injected at runtime.

@@ -18,6 +18,9 @@ dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.3",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
     "pyarrow>=14.0",
     "fastapi>=0.110",
     "uvicorn>=0.29",
@@ -43,6 +46,14 @@ extend-exclude = ["venv"]
 # E501 (line length) is left to the formatter, which owns wrapping.
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# SQLAlchemy's declarative mapper evaluates `Mapped[...]` annotations at
+# runtime, unlike pydantic/FastAPI (eval_type_backport doesn't cover this
+# path) — `X | None` isn't evaluable on the Python 3.9 the local venv runs,
+# so this file uses `Optional[X]` on purpose; UP045 would "fix" it back to
+# the form that breaks locally.
+"src/repositories/postgres/models.py" = ["UP045"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's Depends()/Query()/etc. in argument defaults are idiomatic, not the
