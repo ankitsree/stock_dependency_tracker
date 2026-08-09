@@ -1,0 +1,94 @@
+# Render Blueprint — infrastructure as code for the API service.
+#
+# Declaring the service here rather than clicking through the dashboard means
+# the deployment config is reviewable, diffable, and reproducible. Render reads
+# this file when you create a Blueprint from the repo, and on every push after.
+#
+# STAGE 1 (this file today): the API only, serving from yfinance + the parquet
+# cache. Deliberately no database yet — the Postgres repositories land in Phase
+# 4.8, and a free Render database is time-boxed from creation, so there is no
+# point spending that window on an idle DB. The Stage 3 additions are written
+# out at the bottom, commented, so turning them on is a small diff.
+#
+# NOTE: Render's blueprint schema changes over time (`env:` became `runtime:`,
+# plan names have shifted). If `render.yaml` is rejected at Blueprint creation,
+# check the current spec at https://render.com/docs/blueprint-spec — the intent
+# of each key below is documented inline so it is easy to re-map.
+#
+# The frontend is NOT here. It deploys to Vercel as a static build
+# (see frontend/vercel.json).
+
+services:
+  - type: web
+    name: stockdep-api
+    runtime: docker
+    branch: main
+    autoDeploy: true
+
+    # Must match the database's region once Stage 3 adds one, otherwise the
+    # internal connection string won't resolve and traffic would have to leave
+    # Render's network. Change both together, or neither.
+    region: oregon
+
+    # `free` spins the service down after ~15 minutes idle. On wake, both the
+    # in-memory result cache and the container's parquet cache are gone, so the
+    # first request re-fetches every ticker from Yahoo — slow, and a rate-limit
+    # risk. Acceptable while this is a demo; `starter` removes the spin-down,
+    # and Phase 4.8 removes the re-fetch. Watch memory either way: this image
+    # loads pandas + scipy + networkx.
+    plan: free
+
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # Render probes this before routing traffic to a new deploy. Already
+    # implemented (src/api/routers/health.py) and also used as the Dockerfile's
+    # own HEALTHCHECK.
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: LOG_LEVEL
+        value: INFO
+
+      # `sync: false` means "don't take a value from this file — prompt me in
+      # the dashboard." Correct here because the Vercel origin isn't known
+      # until the frontend is deployed, and committing a placeholder would
+      # silently block every browser request instead of failing loudly.
+      # Set to the Vercel production URL, e.g. https://<project>.vercel.app
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+    # Deliberately absent: PORT and a start command. Render injects PORT, and
+    # the Dockerfile's CMD already binds ${PORT:-8000}.
+
+# --- STAGE 3: uncomment once Phase 4.8's Postgres repositories exist ---------
+#
+# Adding the block below (plus the DATABASE_URL envVar) is the whole cutover —
+# src/api/deps.py switches on DATABASE_URL being set, and src/config.py already
+# carries the field.
+#
+# Two things to get right:
+#   1. `region` must equal the web service's region above.
+#   2. Render's connection string starts `postgresql://`. SQLAlchemy with
+#      psycopg v3 expects `postgresql+psycopg://` — normalise the scheme when
+#      building the engine, or it will work locally and fail only on Render.
+#
+# Also set the service's Pre-Deploy Command to `alembic upgrade head` so
+# migrations run before the new instance takes traffic. (Pre-deploy commands
+# are not available on the free plan.)
+#
+# databases:
+#   - name: stockdep-db
+#     plan: basic-256mb
+#     postgresMajorVersion: "16"
+#     region: oregon
+#
+# ...and under the service's envVars:
+#
+#       - key: DATABASE_URL
+#         fromDatabase:
+#           name: stockdep-db
+#           property: connectionString
+#
+# `fromDatabase` injects the credential at deploy time, so the connection
+# string is never typed into a dashboard field or committed here.
