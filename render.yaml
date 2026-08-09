@@ -6,8 +6,11 @@
 #
 # STAGE 2 (this file now): API + a managed Postgres. src/api/deps.py switches
 # to the Postgres repositories automatically once DATABASE_URL is set — no
-# code change needed here, only this file and two manual steps after deploy
-# (migrate, backfill — see the comments below and production-roadmap.md §6).
+# code change needed here.
+#
+# STAGE 3: .github/workflows/cd.yml now owns migrations and deploys (see
+# `autoDeploy: false` below) — only the one-time universe backfill stays
+# manual. See the comments below and production-roadmap.md §6/§7.
 #
 # NOTE: Render's blueprint schema changes over time (`env:` became `runtime:`,
 # plan names have shifted). If `render.yaml` is rejected at Blueprint sync,
@@ -22,7 +25,16 @@ services:
     name: stockdep-api
     runtime: docker
     branch: main
-    autoDeploy: true
+
+    # Off on purpose. Render's own auto-deploy fires the instant it sees a
+    # new commit on `branch`, with no way to make it wait for migrations to
+    # finish first — that's a race against .github/workflows/cd.yml, which
+    # runs `alembic upgrade head` before deploying. With autoDeploy off,
+    # cd.yml is the only thing that triggers a deploy (via the Deploy Hook
+    # below), so migrate-then-deploy ordering is guaranteed instead of hoped
+    # for. A push still updates this service's *code*; it just doesn't go
+    # live until cd.yml says so.
+    autoDeploy: false
 
     # Must equal the database's region below — otherwise DATABASE_URL's
     # internal hostname won't resolve, or traffic leaves Render's network.
@@ -46,12 +58,13 @@ services:
     # own HEALTHCHECK.
     healthCheckPath: /api/health
 
-    # Runs `alembic upgrade head` before the new instance takes traffic —
-    # the production equivalent of the `docker compose exec api alembic
-    # upgrade head` step used locally. UNCOMMENT ONLY AFTER upgrading off
-    # the `free` plan: Pre-Deploy Commands aren't available on it, and Render
-    # will reject the blueprint sync with this present while `plan: free`.
-    # Until then, run migrations manually — see the comment block below.
+    # Left commented out — superseded by .github/workflows/cd.yml, which now
+    # runs `alembic upgrade head` against DATABASE_URL before triggering the
+    # deploy (see `autoDeploy: false` above), so this would just be a second,
+    # redundant place migrations could run. It's also `free`-plan-incompatible
+    # (Pre-Deploy Commands need a paid plan) and would block the blueprint
+    # sync if uncommented while `plan: free`. Leave off even after upgrading
+    # plans, to avoid two independent migration triggers racing each other.
     # preDeployCommand: alembic upgrade head
 
     envVars:
@@ -86,18 +99,13 @@ databases:
 
 # --- Manual steps after the first sync with this database block -----------
 #
-# Render creates empty `companies`/`prices` tables for you — nothing runs
-# `alembic upgrade head` automatically unless `preDeployCommand` is active
-# (needs a paid web-service plan; see above). Until then, after each deploy
-# that changes the schema:
+# Render creates empty `companies`/`prices` tables for you. Schema changes
+# after that are handled by .github/workflows/cd.yml on every merge to main
+# (build -> migrate -> deploy) — no dashboard step needed for that anymore.
 #
-#   1. Render dashboard -> stockdep-api -> Shell tab -> run:
-#        alembic upgrade head
-#      (One-off jobs also work: dashboard -> Jobs -> Run Job, same command,
-#      same environment as the web service.)
-#   2. First time only — seed the universe + price history:
-#        python -m src.cli backfill-postgres
-#      Safe to re-run; every write is an upsert (see src/cli.py).
-#
-# Once `preDeployCommand` is active, step 1 happens automatically on every
-# deploy; step 2 still only needs to run once.
+# The one step that stays manual, and only runs once ever:
+#   Seed the universe + price history:
+#     python -m src.cli backfill-postgres
+#   Run it locally against the database's External Database URL (Shell tab
+#   is a paid-plan feature — see production-roadmap.md §6.1 for the
+#   workaround). Safe to re-run; every write is an upsert (see src/cli.py).

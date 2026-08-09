@@ -1,0 +1,80 @@
+# CD (production-roadmap.md §7): on every merge to main, build the image,
+# push it to ghcr.io, migrate the production database, then tell Render to
+# deploy. The order matters — migrate *before* deploy, not after, so the new
+# code never runs against an old schema. That's also why render.yaml's
+# `autoDeploy` is off: Render's own git-push auto-deploy can't be made to
+# wait for this workflow, so this workflow triggers the deploy explicitly via
+# Render's Deploy Hook once the migration has actually succeeded.
+#
+# Required repo/environment secrets (Settings -> Secrets and variables ->
+# Actions), all under an environment named "production" — see the setup
+# steps in production-roadmap.md §7:
+#   DATABASE_URL          the same External Database URL used for local
+#                          manual migrations, so this workflow replaces that
+#                          step entirely.
+#   RENDER_DEPLOY_HOOK_URL from the Render dashboard: stockdep-api -> Settings
+#                          -> Deploy Hook -> copy URL. Treat it as a secret —
+#                          anyone with it can trigger a deploy.
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: cd-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+
+  migrate:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e .
+      - name: Apply migrations to production database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: alembic upgrade head
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: migrate
+    environment: production
+    steps:
+      - name: Trigger Render deploy
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
