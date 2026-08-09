@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from src.errors import TickerNotFoundError
 from src.services.graph_service import GraphService
@@ -15,7 +14,9 @@ class _FakeCorrelationService:
         self.calls.append((anchor, exclude_tickers, force_refresh))
         if anchor in self._missing:
             raise TickerNotFoundError(anchor)
-        return _FakeResult(self._rankings.get(anchor, pd.DataFrame(columns=["ticker", "name", "sector", "correlation"])))
+        return _FakeResult(
+            self._rankings.get(anchor, pd.DataFrame(columns=["ticker", "name", "sector", "correlation"]))
+        )
 
 
 class _FakeResult:
@@ -33,7 +34,9 @@ class _FakeCompanyRepository:
 
 
 def _ranked(ticker="SAT1", correlation=0.8):
-    return pd.DataFrame([(ticker, f"{ticker} Co", "Semiconductors", correlation)], columns=["ticker", "name", "sector", "correlation"])
+    return pd.DataFrame(
+        [(ticker, f"{ticker} Co", "Semiconductors", correlation)], columns=["ticker", "name", "sector", "correlation"]
+    )
 
 
 def test_build_graph_composes_rankings_for_each_anchor():
@@ -98,9 +101,7 @@ def test_get_graph_json_returns_plain_dict():
 
 
 def test_get_relatedness_matrix_returns_dataframe():
-    correlation_service = _FakeCorrelationService(
-        {"NVDA": _ranked("SHARED", 0.8), "TSM": _ranked("SHARED", 0.6)}
-    )
+    correlation_service = _FakeCorrelationService({"NVDA": _ranked("SHARED", 0.8), "TSM": _ranked("SHARED", 0.6)})
     graph_service = GraphService(correlation_service, _FakeCompanyRepository())
 
     matrix = graph_service.get_relatedness_matrix(["NVDA", "TSM"])

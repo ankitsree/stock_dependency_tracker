@@ -2,7 +2,35 @@
   "permissions": {
     "allow": [
       "Bash(nohup curl -s --max-time 300 \"http://localhost:8000/api/graph\" -o /tmp/graph_warm.json)",
-      "Bash(echo \"warm started \\(pid $!\\), will check later\")"
+      "Bash(echo \"warm started \\(pid $!\\), will check later\")",
+      "Bash(make -n lint typecheck)",
+      "Bash(venv/bin/ruff format *)",
+      "Bash(venv/bin/ruff check *)",
+      "Bash(grep error: __TRACKED_VAR__/mypy.txt)",
+      "Bash(venv/bin/mypy src *)",
+      "Bash(venv/bin/pytest -q)",
+      "Bash(venv/bin/pre-commit install *)",
+      "Bash(venv/bin/pre-commit run *)",
+      "Edit(/.claude/skills/lint-fix/**)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(grep -rl '```mermaid' --include='*.md' .)",
+      "Bash(ls /Users/ankitsreevathsa/.vscode/extensions 2>/dev/null | grep -i -E 'mermaid|markdown' ; which code cursor 2>/dev/null)",
+      "Read(//Users/ankitsreevathsa/.vscode/extensions/**)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{ jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; case \"$f\" in *.py) venv/bin/ruff format \"$f\" ;; esac; }; } 2>/dev/null || true",
+            "statusMessage": "ruff format"
+          }
+        ]
+      }
     ]
   }
 }

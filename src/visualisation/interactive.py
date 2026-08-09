@@ -84,7 +84,10 @@ def _node_tooltip(ticker: str, data: dict) -> str:
     if data.get("kind") == "anchor":
         return f"<b>{escape(ticker)}</b><br>Anchor"
 
-    lines = [f"<b>{escape(str(data.get('name', ticker)))}</b> ({escape(ticker)})", f"Sector: {escape(str(data.get('sector', 'Unknown')))}"]
+    lines = [
+        f"<b>{escape(str(data.get('name', ticker)))}</b> ({escape(ticker)})",
+        f"Sector: {escape(str(data.get('sector', 'Unknown')))}",
+    ]
     if data.get("market_cap"):
         lines.append(f"Market cap: ${data['market_cap']:,.0f}")
     if data.get("avg_volume"):
@@ -117,7 +120,7 @@ def _theme_script(node_theme: dict, edge_theme: dict) -> str:
   const edgeTheme = {json.dumps(edge_theme)};
   function applyTheme(isDark) {{
     const mode = isDark ? "dark" : "light";
-    const inkColor = isDark ? "{style.anchor_color('dark')}" : "{style.anchor_color('light')}";
+    const inkColor = isDark ? "{style.anchor_color("dark")}" : "{style.anchor_color("light")}";
     nodes.update(Object.entries(nodeTheme).map(([id, c]) => ({{id: id, color: c[mode], font: {{color: inkColor}}}})));
     edges.update(Object.entries(edgeTheme).map(([id, c]) => ({{id: id, color: {{color: c[mode], opacity: c.opacity}}}})));
     const net = document.getElementById("mynetwork");
@@ -142,7 +145,9 @@ def _summary_table(graph: nx.Graph) -> str:
     rows = []
     for anchor, satellite, data in graph.edges(data=True):
         # nx.Graph edges are undirected/unordered — figure out which endpoint is the anchor.
-        anchor_node, satellite_node = (anchor, satellite) if graph.nodes[anchor]["kind"] == "anchor" else (satellite, anchor)
+        anchor_node, satellite_node = (
+            (anchor, satellite) if graph.nodes[anchor]["kind"] == "anchor" else (satellite, anchor)
+        )
         sat_data = graph.nodes[satellite_node]
         stability = data.get("stability")
         rows.append(
@@ -187,7 +192,9 @@ def _summary_table(graph: nx.Graph) -> str:
             f"<td>{market_cap_cell}</td>"
         )
         if has_phase4_columns:
-            lag_cell = f"{r['best_lag']}d ({_fmt(r['best_lag_correlation'])})" if r["best_lag"] is not None else "&mdash;"
+            lag_cell = (
+                f"{r['best_lag']}d ({_fmt(r['best_lag_correlation'])})" if r["best_lag"] is not None else "&mdash;"
+            )
             regime_cell = "&#9888;" if r["regime_break"] else "&mdash;"
             cells += (
                 f"<td>{_fmt(r['pearson_correlation'])}</td>"

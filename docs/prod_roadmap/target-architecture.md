@@ -1,4 +1,3 @@
-# Target (Production) Architecture
 
 > **What this document is.** The architecture we want to build toward: a deployed,
 > performant, publicly-usable product with **nothing hardcoded**, real storage, and a
@@ -8,7 +7,7 @@
 >
 > For where we are now, see [current-architecture.md](current-architecture.md). This
 > document is the architectural *destination*; the sequenced, phase-by-phase *route* is
-> already written in [production-roadmap.md](../backend_docs/production-roadmap.md) (infra,
+> already written in [production-roadmap.md](production-roadmap.md) (infra,
 > Postgres, CI/CD, deployment) and [universe-roadmap.md](../backend_docs/universe-roadmap.md)
 > (the dynamic universe). This doc references those rather than repeating their steps.
 
@@ -541,7 +540,7 @@ flowchart LR
 - **The dynamic universe's true gate is Postgres**, not the frontend (a common
   misconception — it is *sequenced* after the frontend by preference, but *depends* on the DB).
 - Detailed steps, illustrative Dockerfiles/compose/SQL, and every open decision:
-  [production-roadmap.md](../backend_docs/production-roadmap.md) and
+  [production-roadmap.md](production-roadmap.md) and
   [universe-roadmap.md](../backend_docs/universe-roadmap.md).
 
 ---

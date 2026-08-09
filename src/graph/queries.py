@@ -69,8 +69,9 @@ def anchor_relatedness_matrix(graph: nx.Graph) -> pd.DataFrame:
     for satellite, connected in shared_satellites(graph).items():
         for i in range(len(connected)):
             for j in range(i + 1, len(connected)):
-                pair = tuple(sorted((connected[i], connected[j])))
-                strength = min(abs(graph[pair[0]][satellite]["weight"]), abs(graph[pair[1]][satellite]["weight"]))
+                low, high = sorted((connected[i], connected[j]))
+                pair = (low, high)
+                strength = min(abs(graph[low][satellite]["weight"]), abs(graph[high][satellite]["weight"]))
                 pair_strengths.setdefault(pair, []).append(strength)
 
     matrix = pd.DataFrame(0.0, index=anchors, columns=anchors)

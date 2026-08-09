@@ -183,11 +183,15 @@ class CorrelationService:
             ranked = attach_metric(ranked, lagged["best_lag_correlation"], "best_lag_correlation")
 
         satellite_sectors = ranked.set_index("ticker")["sector"]
-        sector_relative = compute_sector_relative_correlations(anchor_returns, top_returns, satellite_sectors, sector_etf_returns)
+        sector_relative = compute_sector_relative_correlations(
+            anchor_returns, top_returns, satellite_sectors, sector_etf_returns
+        )
         ranked = attach_metric(ranked, sector_relative, "sector_relative_correlation")
 
         top_rolling = {t: rolling[t] for t in top_tickers if t in rolling}
-        regime = detect_regime_breaks(top_rolling, spearman, self._config.regime_recent_days, self._config.regime_break_threshold)
+        regime = detect_regime_breaks(
+            top_rolling, spearman, self._config.regime_recent_days, self._config.regime_break_threshold
+        )
         if not regime.empty:
             ranked = attach_metric(ranked, regime["regime_break"], "regime_break")
             ranked = attach_metric(ranked, regime["drift"], "regime_drift")
@@ -202,11 +206,15 @@ class CorrelationService:
             threshold if threshold is not None else self._config.correlation_threshold,
         )
 
-    def _fetch_returns(self, anchor: str, extra_tickers: list[str], force_refresh: bool) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def _fetch_returns(
+        self, anchor: str, extra_tickers: list[str], force_refresh: bool
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         universe = self._company_repo.list_universe()
         satellite_tickers = universe["ticker"].tolist()
         all_tickers = list(dict.fromkeys([anchor, *satellite_tickers, *extra_tickers]))
-        prices = self._price_repo.get_price_history(all_tickers, self._config.lookback_days, force_refresh=force_refresh)
+        prices = self._price_repo.get_price_history(
+            all_tickers, self._config.lookback_days, force_refresh=force_refresh
+        )
         if anchor not in prices.columns:
             raise TickerNotFoundError(anchor)
         return compute_log_returns(prices), universe

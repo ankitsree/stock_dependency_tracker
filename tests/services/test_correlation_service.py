@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.config import Config
 from src.errors import InsufficientDataError, TickerNotFoundError
 from src.services.correlation_service import CorrelationService
-from src.config import Config
 
 
 class _FakePriceRepository:

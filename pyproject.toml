@@ -25,6 +25,39 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=7.4", "httpx>=0.27"]
+dev = ["ruff>=0.16", "mypy>=1.11", "pre-commit>=3.7"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+extend-exclude = ["venv"]
+
+[tool.ruff.lint]
+# E/F: pycodestyle+pyflakes, I: import sorting, UP: pyupgrade, B: bugbear.
+# E501 (line length) is left to the formatter, which owns wrapping.
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's Depends()/Query()/etc. in argument defaults are idiomatic, not the
+# mutable-default bug B008 targets — mark them safe to "call" in defaults.
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body",
+    "fastapi.Header", "fastapi.Cookie", "fastapi.Form", "fastapi.File",
+]
+
+[tool.mypy]
+python_version = "3.9"
+plugins = ["pydantic.mypy"]
+# Gradual adoption (production-roadmap.md §4.6): start lenient, ratchet up
+# (disallow_untyped_defs, then disallow_any_generics) module by module later.
+check_untyped_defs = true
+# pandas / PyYAML / yfinance / pyvis ship no type stubs in this env, so mypy
+# emits "import-untyped". Silence that one category (it is not a real type
+# error) to keep the baseline green. Installing pandas-stubs / types-PyYAML to
+# actually type-check the pandas-heavy analysis layer is a good future ratchet
+# step; genuinely missing modules still surface as import-not-found.
+disable_error_code = ["import-untyped"]

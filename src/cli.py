@@ -90,7 +90,9 @@ def _run_phase2_or_3(
     company_repo: YFinanceCompanyRepository,
     interactive: bool,
 ) -> None:
-    print(f"Fetching {config.lookback_days}d of price history for {len(config.anchors)} anchors + satellite candidates...")
+    print(
+        f"Fetching {config.lookback_days}d of price history for {len(config.anchors)} anchors + satellite candidates..."
+    )
 
     anchor_rankings: dict[str, pd.DataFrame] = {}
     active_anchors: list[str] = []
@@ -134,7 +136,9 @@ def _run_phase2_or_3(
     _print_cross_anchor_summary(graph)
 
 
-def _run_phase4(config: Config, correlation_service: CorrelationService, company_repo: YFinanceCompanyRepository) -> None:
+def _run_phase4(
+    config: Config, correlation_service: CorrelationService, company_repo: YFinanceCompanyRepository
+) -> None:
     print(
         f"Fetching {config.lookback_days}d of price history for {len(config.anchors)} anchors "
         "+ satellite candidates + market/sector proxies..."
@@ -160,7 +164,10 @@ def _run_phase4(config: Config, correlation_service: CorrelationService, company
         for _, row in ranked.iterrows():
             if pd.notna(row.get("regime_break")) and row["regime_break"]:
                 regime_alerts.append((anchor, row["ticker"], row["correlation"], row.get("regime_drift")))
-            if pd.notna(row.get("best_lag")) and abs(row.get("best_lag_correlation") or 0) >= config.correlation_threshold:
+            if (
+                pd.notna(row.get("best_lag"))
+                and abs(row.get("best_lag_correlation") or 0) >= config.correlation_threshold
+            ):
                 leading_indicators.append((anchor, row["ticker"], int(row["best_lag"]), row["best_lag_correlation"]))
 
         anchor_rankings[anchor] = ranked
@@ -179,7 +186,9 @@ def _run_phase4(config: Config, correlation_service: CorrelationService, company
 
     graph = build_multi_anchor_graph(anchor_rankings, metadata)
     graph_path = config.outputs_dir / "graphs" / "multi_anchor_dependency_graph_phase4.html"
-    build_interactive_graph(graph, graph_path, title=f"Multi-Anchor Dependency Graph — Phase 4 ({config.lookback_days}d)")
+    build_interactive_graph(
+        graph, graph_path, title=f"Multi-Anchor Dependency Graph — Phase 4 ({config.lookback_days}d)"
+    )
     print(f"\nSaved interactive graph to {graph_path}")
 
     _print_cross_anchor_summary(graph)

@@ -1,0 +1,28 @@
+# Git pre-commit gate — runs automatically on `git commit` once you've run
+# `pre-commit install` (or `make dev-install`).
+#
+# ruff (lint + format) is fast and self-contained, so it runs on every commit.
+# mypy is deliberately NOT wired in here yet: on a fresh baseline it would block
+# every commit until all type errors are cleared. It runs via `make typecheck`
+# and in CI (Phase 4.9) instead. Once `make typecheck` is clean, uncomment the
+# local mypy hook at the bottom to enforce it on commit too.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      - id: ruff-check      # lint
+        args: [--fix]
+      - id: ruff-format     # format
+
+  # Enable once `make typecheck` passes. `language: system` runs mypy from your
+  # active environment so it can import the project's deps (pydantic, etc.) —
+  # activate the venv or `pip install -e ".[dev]"` before committing.
+  # - repo: local
+  #   hooks:
+  #     - id: mypy
+  #       name: mypy
+  #       entry: mypy
+  #       language: system
+  #       types_or: [python, pyi]
+  #       pass_filenames: false
+  #       args: [src]

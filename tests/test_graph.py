@@ -172,7 +172,13 @@ def test_edge_carries_phase4_metadata_when_present():
 def test_edge_has_no_phase4_keys_when_columns_absent():
     graph = build_dependency_graph("NVDA", _ranked())
     edge = graph["NVDA"]["SAT1"]
-    for key in ("pearson_correlation", "partial_correlation", "sector_relative_correlation", "best_lag", "regime_break"):
+    for key in (
+        "pearson_correlation",
+        "partial_correlation",
+        "sector_relative_correlation",
+        "best_lag",
+        "regime_break",
+    ):
         assert key not in edge
 
 
@@ -198,8 +204,12 @@ def test_anchor_relatedness_matrix_scores_shared_satellite():
 
 
 def test_anchor_relatedness_matrix_zero_for_unrelated_anchors():
-    ranked_a = pd.DataFrame([("A_ONLY", "A Co", "Semiconductors", 0.8)], columns=["ticker", "name", "sector", "correlation"])
-    ranked_b = pd.DataFrame([("B_ONLY", "B Co", "Semiconductors", 0.7)], columns=["ticker", "name", "sector", "correlation"])
+    ranked_a = pd.DataFrame(
+        [("A_ONLY", "A Co", "Semiconductors", 0.8)], columns=["ticker", "name", "sector", "correlation"]
+    )
+    ranked_b = pd.DataFrame(
+        [("B_ONLY", "B Co", "Semiconductors", 0.7)], columns=["ticker", "name", "sector", "correlation"]
+    )
     graph = build_multi_anchor_graph({"NVDA": ranked_a, "TSM": ranked_b})
 
     matrix = anchor_relatedness_matrix(graph)

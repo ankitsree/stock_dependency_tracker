@@ -74,7 +74,9 @@ def test_get_company_profile_ticker_not_in_universe_falls_back_gracefully():
     # e.g. an anchor like NVDA, which isn't in the satellite universe list
     # but should still resolve if yfinance has market data for it.
     universe = _universe()
-    market_data = pd.DataFrame([("NVDA", 3_000_000_000_000, 200_000_000)], columns=["ticker", "market_cap", "avg_volume"])
+    market_data = pd.DataFrame(
+        [("NVDA", 3_000_000_000_000, 200_000_000)], columns=["ticker", "market_cap", "avg_volume"]
+    )
     repo = _FakeCompanyRepository(universe, market_data)
     service = CompanyService(repo)
 
