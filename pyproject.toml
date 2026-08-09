@@ -64,7 +64,15 @@ extend-immutable-calls = [
 ]
 
 [tool.mypy]
-python_version = "3.9"
+# No explicit python_version: let mypy infer it from whichever interpreter
+# runs it. Locally that's the 3.9 venv; CI runs 3.12 (matching the Dockerfile
+# and actual production runtime — see Dockerfile's builder-stage comment).
+# A hardcoded "3.9" here worked locally but broke CI: the same mypy version,
+# run under CI's 3.12 interpreter, refused to target as old as 3.9 ("Python
+# 3.9 is not supported (must be 3.10 or higher)") and then failed to parse
+# numpy's stub files (3.12-only syntax) under that rejected floor. Letting
+# the target float with the interpreter sidesteps checking against a version
+# nothing actually deploys on, in either environment.
 plugins = ["pydantic.mypy"]
 # Gradual adoption (production-roadmap.md §4.6): start lenient, ratchet up
 # (disallow_untyped_defs, then disallow_any_generics) module by module later.
