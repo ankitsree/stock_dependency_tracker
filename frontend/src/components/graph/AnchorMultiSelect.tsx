@@ -65,6 +65,13 @@ export function AnchorMultiSelect({ anchors, onChange }: AnchorMultiSelectProps)
 
   const activeOptionId =
     isOpen && suggestions[highlight] ? `anchor-opt-${suggestions[highlight].ticker}` : undefined
+  // The dropdown only ever suggests from the satellite universe, which
+  // structurally excludes anchors (NVDA, AAPL, ...) — so a real anchor
+  // ticker with no suggestions looks identical to a typo. This hint is the
+  // only signal that Enter still works; without it, "no matches" reads as
+  // "invalid".
+  const trimmedDraft = draft.trim()
+  const showNoMatchHint = isOpen && trimmedDraft.length > 0 && suggestions.length === 0
 
   return (
     <div>
@@ -99,7 +106,7 @@ export function AnchorMultiSelect({ anchors, onChange }: AnchorMultiSelectProps)
             onKeyDown={onKeyDown}
             placeholder="+ add ticker"
             role="combobox"
-            aria-expanded={isOpen && suggestions.length > 0}
+            aria-expanded={isOpen && (suggestions.length > 0 || showNoMatchHint)}
             aria-controls="anchor-suggestions"
             aria-autocomplete="list"
             aria-activedescendant={activeOptionId}
@@ -107,7 +114,16 @@ export function AnchorMultiSelect({ anchors, onChange }: AnchorMultiSelectProps)
             className="w-32 rounded-full border border-dashed border-hairline bg-transparent px-3 py-1 text-sm text-content placeholder:text-content-dim focus:border-brand focus:outline-none"
           />
 
-          {isOpen && suggestions.length > 0 ? (
+          {showNoMatchHint ? (
+            <div
+              id="anchor-suggestions"
+              className="absolute left-0 top-full z-30 mt-1.5 w-64 rounded-lg border border-hairline bg-raised px-3 py-2 text-xs text-content-dim shadow-lg"
+            >
+              Not in the satellite list — press <kbd className="font-semibold text-content">Enter</kbd> to
+              add <span className="font-semibold text-content">{trimmedDraft.toUpperCase()}</span> as an
+              anchor anyway.
+            </div>
+          ) : isOpen && suggestions.length > 0 ? (
             <ul
               id="anchor-suggestions"
               role="listbox"
