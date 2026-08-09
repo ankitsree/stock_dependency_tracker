@@ -27,7 +27,7 @@ Legend: ✅ done · 🟡 partially done · ⬜ not started.
 | **Engineering hygiene (4.6)** | ✅ | `ruff` + `mypy` configured in [pyproject.toml](../../pyproject.toml), [.pre-commit-config.yaml](../../.pre-commit-config.yaml), and a [Makefile](../../Makefile) whose targets CI will call verbatim. `make check` is green: lint, format, 46 files type-clean, 142 tests pass. |
 | **Containerization (4.7)** | ✅ | [Dockerfile](../../Dockerfile) (multi-stage, Python 3.12, non-root `appuser`), [.dockerignore](../../.dockerignore), [docker-compose.yml](../../docker-compose.yml) (API + Postgres 16, healthchecked). `Config` is now `pydantic-settings`-backed: **env wins, `config.yaml` falls back** ([src/config.py](../../src/config.py)). Verified end-to-end — see §5. |
 | **Postgres (4.8)** | ✅ | [src/repositories/postgres/](../../src/repositories/postgres/) — `PostgresPriceRepository`/`PostgresCompanyRepository` satisfy the existing Protocols exactly; [deps.py](../../src/api/deps.py) cuts over on `DATABASE_URL` presence. Alembic migration applied and verified against real Postgres (17 repository tests + full backfill). **Live on Render** — `stockdep-db` provisioned, migrated, and backfilled against real Yahoo data; the deployed API serves from it (`database_url_configured=True`). |
-| **CI/CD (4.9)** | ✅ | [.github/workflows/ci.yml](../../.github/workflows/ci.yml) (lint + type-check + test-against-real-Postgres + build, on every PR/push) and [cd.yml](../../.github/workflows/cd.yml) (build, push to `ghcr.io`, migrate prod, then trigger the Render deploy hook, on merge to `main`). `render.yaml`'s `autoDeploy` is now `false` on purpose — `cd.yml` owns deploy ordering so migrations always run before the new code goes live. **Needs repo setup to go green** — see §7. |
+| **CI/CD (4.9)** | ✅ | [.github/workflows/ci.yml](../../.github/workflows/ci.yml) (lint + type-check + test-against-real-Postgres + build, on every PR/push) and [cd.yml](../../.github/workflows/cd.yml) (build, push to `ghcr.io`, migrate prod, then trigger the Render deploy hook, on merge to `main`). `render.yaml`'s `autoDeploy` is `false` — `cd.yml` owns deploy ordering. Live end-to-end: `production` environment secrets set, branch protection requiring `lint`+`test` (and a PR, with approvals off — solo maintainer) is on, Blueprint synced. |
 | **Deployment (6)** | 🟡 | API live on Render, frontend live on Vercel, Postgres live and backfilled. Still open: rate limiting, Sentry, the go-live checklist in §9.5. |
 | **Secrets hygiene** | ✅ | `.env` (and `*.local`) gitignored; [.env.example](../../.env.example) committed as the documented template. |
 | **Dynamic universe (7)** | ⬜ | Post-launch; gated on Postgres. See [universe-roadmap.md](../backend_docs/universe-roadmap.md). |
@@ -61,9 +61,9 @@ Phase numbering is kept from earlier drafts (and referenced by
 | **4.6** | Lint, format, type-check, pre-commit | ✅ done | Step 0 | — |
 | **4.7** | Docker + compose + env-var config | ✅ done | Step 0 | — |
 | **4.8** | Postgres-backed repositories + migrations | ✅ done, live on Render | 4.7 (local DB via compose) | — |
-| **4.9** | CI/CD (GitHub Actions) | ✅ workflows written; **repo secrets setup next** | 4.6, 4.7 | — |
+| **4.9** | CI/CD (GitHub Actions) | ✅ done, live end-to-end | 4.6, 4.7 | — |
 | **5** | Frontend | 🟡 built; needs tests + prod wiring | REST API (done) | ~2–3 days remaining |
-| **6** | Deployment & operations | 🟡 API + Postgres + frontend live; rate limiting/Sentry/checklist remain | 4.7, (4.8), 4.9, 5 | 1–2 days |
+| **6** | Deployment & operations | 🟡 API + Postgres + frontend live, CI/CD gating merges; rate limiting/Sentry/checklist remain | 4.7, (4.8), 4.9, 5 | 1–2 days |
 | **7** | Dynamic universe | ⬜ post-launch | 4.8 | see universe-roadmap |
 | **5b** | Watchlists + auth | ⬜ post-launch | 4.8 | — |
 
@@ -82,13 +82,13 @@ flowchart LR
 
   classDef done fill:#1baf7a,stroke:#199e70,color:#fff;
   classDef partial fill:#eda100,stroke:#c98500,color:#000;
-  class S0,H,D,DB done;
-  class CI,DEP partial;
+  class S0,H,D,DB,CI done;
+  class DEP partial;
 ```
 
-`CI` and `DEP` are amber: the workflows and hosting are all in place, but `CI` still needs
-repo secrets before it goes green (§7) and `DEP` still needs rate limiting/Sentry/the go-live
-checklist (§9.5) before it's genuinely production-hardened.
+`DEP` is amber: hosting is live (API, Postgres, frontend) and CI/CD gates every merge, but
+rate limiting, Sentry, and the rest of the go-live checklist (§9.5) are still open before it's
+genuinely production-hardened.
 
 **Frontend has no hard dependency on the infra track** — it only needs the (stable) API.
 Its remaining work (tests, prod env, Vercel deploy) can run in parallel with 4.6–4.9.
@@ -394,7 +394,7 @@ Adding the database is now a blueprint change, not a new capability:
 
 ---
 
-## 7. Phase 4.9 — CI/CD pipeline ✅ (workflows written; repo setup next)
+## 7. Phase 4.9 — CI/CD pipeline ✅ done
 
 **Goal:** every PR is auto-linted, type-checked, and tested against a real Postgres; every
 merge to `main` builds, migrates, and deploys — in that order, not hoped-for order.
@@ -550,7 +550,7 @@ These all work only once §5's env-var config is in place.
 [x] 4.8 Postgres migrated + backfilled; DATABASE_URL cutover works — live on Render
 [x] API deployed to Render; GET /api/health returns ok
 [x] frontend built with prod VITE_API_BASE_URL; deployed to Vercel
-[ ] 4.9 CI green on a PR; branch protection on — workflows written, repo secrets needed (§7)
+[x] 4.9 CI green on PRs; branch protection on; cd.yml migrates + deploys on merge
 [ ] rate limiting live; CORS set to the real frontend origin
 [ ] Sentry receiving frontend errors
 [ ] end-to-end smoke test against the deployed stack passes
