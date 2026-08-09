@@ -59,6 +59,12 @@ export function TickerSearch() {
 
   const activeOptionId =
     isOpen && suggestions[highlight] ? `ticker-opt-${suggestions[highlight].ticker}` : undefined
+  // The dropdown only ever suggests from the satellite universe, which
+  // structurally excludes anchors (NVDA, AAPL, ...) — so a real ticker with
+  // no suggestions looks identical to a typo. This hint is the only signal
+  // that Enter still works; without it, "no matches" reads as "invalid".
+  const trimmedQuery = query.trim()
+  const showNoMatchHint = isOpen && trimmedQuery.length > 0 && suggestions.length === 0
 
   return (
     <div ref={containerRef} className="relative" role="search">
@@ -74,14 +80,22 @@ export function TickerSearch() {
         onKeyDown={onKeyDown}
         placeholder="Search ticker…"
         role="combobox"
-        aria-expanded={isOpen && suggestions.length > 0}
+        aria-expanded={isOpen && (suggestions.length > 0 || showNoMatchHint)}
         aria-controls="ticker-search-listbox"
         aria-autocomplete="list"
         aria-activedescendant={activeOptionId}
         aria-label="Search for a ticker"
         className="h-9 w-40 rounded-md border border-hairline bg-raised px-3 text-sm text-content placeholder:text-content-dim focus:border-brand focus:outline-none sm:w-52"
       />
-      {isOpen && suggestions.length > 0 ? (
+      {showNoMatchHint ? (
+        <div
+          id="ticker-search-listbox"
+          className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-hairline bg-raised px-3 py-2 text-xs text-content-dim shadow-lg"
+        >
+          Not in the satellite list — press <kbd className="font-semibold text-content">Enter</kbd> to
+          look up <span className="font-semibold text-content">{trimmedQuery.toUpperCase()}</span> anyway.
+        </div>
+      ) : isOpen && suggestions.length > 0 ? (
         <ul
           id="ticker-search-listbox"
           role="listbox"
