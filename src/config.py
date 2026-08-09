@@ -59,6 +59,11 @@ class Config(BaseSettings):
     # keys off its presence in src/api/deps.py.
     database_url: str | None = None
     log_level: str = "INFO"
+    # Unset (the default) => Sentry is never initialized — no network calls,
+    # no accidental noise from local dev or CI. Set => src/api/main.py wires
+    # up error/performance monitoring and log forwarding, gated on presence
+    # exactly like database_url above.
+    sentry_dsn: str | None = None
 
     @field_validator("anchors", "cors_allowed_origins", mode="before")
     @classmethod
