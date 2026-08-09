@@ -4,9 +4,10 @@ plain `def`, not `async def` — see src/api/routers/prices.py's note.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from src.api import deps
+from src.api.rate_limit import limiter
 from src.api.schemas.correlations import CorrelationResponse
 from src.services.correlation_service import CorrelationService
 
@@ -24,7 +25,9 @@ def get_correlations(
 
 
 @router.post("/{ticker}/refresh", response_model=CorrelationResponse)
+@limiter.limit("5/minute")
 def refresh_correlations(
+    request: Request,
     ticker: str,
     top_n: int | None = Query(default=None, gt=0),
     threshold: float | None = Query(default=None, ge=0, le=1),
