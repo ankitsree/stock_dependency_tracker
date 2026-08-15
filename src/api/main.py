@@ -3,8 +3,11 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -52,6 +55,23 @@ def create_app() -> FastAPI:
     app.add_middleware(SlowAPIMiddleware)
 
     config = deps.get_config()
+
+    if config.sentry_dsn:
+        # traces_sample_rate=1.0 (100%) is deliberate at this traffic scale —
+        # tune down if/when real usage makes the Sentry quota a concern.
+        # enable_logs forwards Python logging records as Sentry Logs, which
+        # is why LOG_LEVEL (below) doubles as the log noise floor for both
+        # stdout and Sentry.
+        sentry_sdk.init(
+            dsn=config.sentry_dsn,
+            integrations=[
+                StarletteIntegration(transaction_style="endpoint"),
+                FastApiIntegration(transaction_style="endpoint"),
+            ],
+            traces_sample_rate=1.0,
+            enable_logs=True,
+        )
+
     # Configure the root logger here rather than at import time so tests that
     # build an app don't fight over global logging state. LOG_LEVEL is env
     # driven: DEBUG locally, INFO in production.

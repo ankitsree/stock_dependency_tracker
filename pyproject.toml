@@ -25,6 +25,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "slowapi>=0.1.9",
+    "sentry-sdk>=2.60",
     # Only needed to evaluate `X | None` annotations on Python 3.9, which the
     # local venv still runs. The 3.12 container skips it via this marker.
     "eval_type_backport>=0.2.0; python_version < '3.10'",

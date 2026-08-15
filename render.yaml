@@ -88,6 +88,14 @@ services:
           name: stockdep-db
           property: connectionString
 
+      # `sync: false` — same reasoning as CORS_ALLOWED_ORIGINS above. Not a
+      # traditional secret (Sentry DSNs are meant to be safe even in
+      # client-side code) but still environment-specific, so it stays a
+      # dashboard entry rather than a committed value. Unset => src/api/main.py
+      # skips sentry_sdk.init() entirely.
+      - key: SENTRY_DSN
+        sync: false
+
     # Deliberately absent: PORT and a start command. Render injects PORT, and
     # the Dockerfile's CMD already binds ${PORT:-8000}.
 
