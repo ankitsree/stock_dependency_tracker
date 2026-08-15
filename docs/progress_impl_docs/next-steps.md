@@ -6,6 +6,9 @@ technical depth, with enough analysis of each to choose deliberately.
 
 **Companion documents:**
 - [what-has-been-built.md](what-has-been-built.md) — the record of how we got here.
+- [track-a-product-plan.md](track-a-product-plan.md) — §7 Track A, planned out in full.
+- [research-track.md](research-track.md) — the portfolio research workspace that follows
+  Track A, extending §4.2 and §4.3 from a single edge to a whole portfolio.
 - [universe-roadmap.md](../backend_docs/universe-roadmap.md) — the full Phase 7 design (dynamic universe).
 - [target-architecture.md](../prod_roadmap/target-architecture.md) — the end-state topology.
 
