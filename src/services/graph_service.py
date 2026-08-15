@@ -26,11 +26,15 @@ class GraphService:
         threshold: float | None = None,
         force_refresh: bool = False,
     ) -> nx.Graph:
-        # Fetched once for every anchor up front rather than letting each
-        # anchor's own ranking call fetch it separately — see
-        # CorrelationService.prefetch_prices for why that matters (it's the
-        # difference between one Yahoo download and one per anchor).
-        prefetched_prices = self._correlation_service.prefetch_prices(anchors, force_refresh=force_refresh)
+        # Prefetch prices only when we actually intend to compute — a
+        # `force_refresh=True` request bypasses stored snapshots and hits
+        # the full analytic stack per anchor, and prefetching once matters
+        # there (see CorrelationService.prefetch_prices). On the normal
+        # read path the graph is served from the `correlations` table
+        # (Track A Phase 1), so no Yahoo I/O is needed at all.
+        prefetched_prices = (
+            self._correlation_service.prefetch_prices(anchors, force_refresh=force_refresh) if force_refresh else None
+        )
 
         anchor_rankings: dict[str, pd.DataFrame] = {}
         for anchor in anchors:

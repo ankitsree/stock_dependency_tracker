@@ -128,3 +128,14 @@ def test_unknown_anchor_exits_cleanly_with_message(sandbox):
         main(["phase1", "NODATA_TICKER"])
 
     assert "NODATA_TICKER" in str(exc_info.value)
+
+
+def test_compute_correlations_requires_database_url(sandbox):
+    """The Postgres-only compute-correlations job (Track A Phase 1) refuses
+    to run when DATABASE_URL is unset — writing to nothing would be silent
+    data loss, not a no-op.
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        main(["compute-correlations"])
+
+    assert "DATABASE_URL" in str(exc_info.value)

@@ -1,16 +1,38 @@
-# Docs
+# Stock Dependency Tracker
 
-High-level summaries of what's been built, phase by phase. For the original design and full roadmap, see [stock_correlation_graph_roadmap.md](stock_correlation_graph_roadmap.md). For a quick-reference on conventions and tech stack, see [CLAUDE.md](CLAUDE.md).
+A tool that takes large-cap "anchor" stocks (NVDA, AAPL, TSM, …) and discovers
+smaller "satellite" stocks whose returns are statistically correlated with each
+anchor, producing a weighted, explorable dependency graph.
 
-- [phase1.md](docs/phase1.md) — single-anchor proof of concept: fetch → correlate → rank → static graph.
-- [phase2.md](docs/phase2.md) — multi-anchor pipeline, rolling-correlation stability scoring, market-cap/volume node metadata, combined graph with cross-anchor queries.
-- [phase3.md](docs/phase3.md) — interactive HTML graph (pyvis/vis.js): sector color-coding, market-cap sizing, hover tooltips, light/dark support, and a companion summary table.
-- [phase4.md](docs/phase4.md) — advanced analytics: Spearman rank correlation as the primary ranking metric, partial (market-adjusted) and sector-relative correlation, time-lagged cross-correlation, regime-break detection, and an anchor-relatedness ("correlation of correlations") matrix.
-- [phase4-5.md](docs/phase4-5.md) — modular REST API refactor: repositories (Postgres-ready seam) → services → FastAPI routes, replacing the four `run_phaseN.py` scripts with one CLI built on the same services the API uses.
-- [correlation-mechanism.md](docs/correlation-mechanism.md) — deep dive on the correlation math itself: exactly what data points are used (today, and what a V2 engine could add), how prices become returns, how pairs are aligned, how the stability score is derived, the full Phase 4 methodology, and a worked numeric example.
-- [production-roadmap.md](docs/production-roadmap.md) — the plan from here to a deployed product: engineering hygiene (lint/format/type-check), Docker, Postgres migration, CI/CD (GitHub Actions), the Phase 5 frontend (stack, functional spec, and a ready-to-use build prompt), and deployment/hosting.
-- [frontend-roadmap.md](docs/frontend-roadmap.md) — the Phase 5 frontend broken into a step-by-step build sequence: for each step, the questions to answer yourself first and the follow-up prompt that results, covering performance, responsiveness, flexibility, and visual style end to end.
-- [frontend-build-plan.md](docs/frontend-build-plan.md) — frontend-roadmap.md's Step 0 questions, answered and reconciled: locked design tokens, a rough `frontend/` file structure, and the local dev/iteration workflow for actually building it.
-- [universe-roadmap.md](docs/universe-roadmap.md) — Phase 7 (post-frontend): replacing the hardcoded 55-ticker satellite universe with a dynamically-screened, filterable one — sourcing, the curation-vs-scale tradeoff, the CompanyRepository seam it plugs into, and the new statistical/compute risks at scale.
+Live: FastAPI on Render, React frontend on Vercel, Postgres for prices +
+company metadata. Full history in [docs/progress_impl_docs/what-has-been-built.md](docs/progress_impl_docs/what-has-been-built.md).
 
-See also [.claude/skills/network-graph-style/SKILL.md](.claude/skills/network-graph-style/SKILL.md) for the concrete color/sizing rules used by every graph renderer.
+For conventions and tech stack, see [CLAUDE.md](CLAUDE.md).
+For the original design and full roadmap, see
+[stock_correlation_graph_roadmap.md](stock_correlation_graph_roadmap.md).
+
+## Docs
+
+### Where the project is going
+- [progress_impl_docs/what-has-been-built.md](docs/progress_impl_docs/what-has-been-built.md) — how we got to a deployed, CI-gated system.
+- [progress_impl_docs/next-steps.md](docs/progress_impl_docs/next-steps.md) — the menu of what's next, with a decision framework.
+- [progress_impl_docs/track-a-product-plan.md](docs/progress_impl_docs/track-a-product-plan.md) — the full "make it a real product" track (precomputed correlations → scheduled jobs → portfolio analysis → regime surfacing).
+- [progress_impl_docs/track-a-worktree-plan.md](docs/progress_impl_docs/track-a-worktree-plan.md) — how to parallelise Track A across worktrees.
+- [progress_impl_docs/research-track.md](docs/progress_impl_docs/research-track.md) — the portfolio research workspace that extends Track A.
+
+### Production topology & roadmap
+- [prod_roadmap/current-architecture.md](docs/prod_roadmap/current-architecture.md) — the deployed system today.
+- [prod_roadmap/target-architecture.md](docs/prod_roadmap/target-architecture.md) — the end-state design.
+- [prod_roadmap/production-roadmap.md](docs/prod_roadmap/production-roadmap.md) — the plan that got the app deployed: hygiene, Docker, Postgres, CI/CD, hosting.
+
+### Backend deep-dives
+- [backend_docs/correlation-mechanism.md](docs/backend_docs/correlation-mechanism.md) — the correlation math: what data points, how prices become returns, pair alignment, stability score, Phase 4 methodology, worked example.
+- [backend_docs/universe-roadmap.md](docs/backend_docs/universe-roadmap.md) — Phase 7 (post-frontend): replacing the hardcoded 55-ticker satellite universe with a dynamically-screened one — sourcing, curation-vs-scale tradeoff, statistical/compute risks at scale.
+
+### Frontend
+- [frontend_docs/frontend-roadmap.md](docs/frontend_docs/frontend-roadmap.md) — the Phase 5 frontend broken into a step-by-step build sequence.
+- [frontend_docs/frontend-build-plan.md](docs/frontend_docs/frontend-build-plan.md) — the frontend-roadmap.md Step 0 questions answered: locked design tokens, rough `frontend/` structure, local dev workflow.
+- [frontend/README.md](frontend/README.md) — how to run the frontend locally.
+
+See also [.claude/skills/network-graph-style/SKILL.md](.claude/skills/network-graph-style/SKILL.md)
+for the concrete color/sizing rules used by every graph renderer.
