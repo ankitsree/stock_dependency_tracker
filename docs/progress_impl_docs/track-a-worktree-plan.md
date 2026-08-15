@@ -19,6 +19,7 @@ that way, and land a **seam commit** before each fan-out, and conflicts drop to 
 | **Realistic time saved** | ~2 weeks off a 10–12 week track. Real, not transformative |
 | **Biggest risk** | Not merge conflicts. It's **two worktrees sharing one local Postgres** (§6.1) |
 | **Prerequisite for every fan-out** | A seam commit on `main` first (§4). Skip it and you get conflicts in every shared file |
+| **Recommended shape** | Phase 1 solo → Phase 2 ∥ Phase 3 (3 worktrees) → Phase 4 — see **§5A** |
 
 The honest framing: worktrees don't create parallelism, they only *exploit* parallelism that
 already exists in the dependency graph. Most of Track A's graph is serial. Where it isn't,
@@ -178,6 +179,95 @@ body; `wt-p4-ui` owns `RegimeBreaksFeed` and its page.
 
 Phase 4's backend can start during Wave 3 if its seam commit lands early — it reads Phase 1's
 table and writes a new one, so it collides with Phase 3 nowhere.
+
+---
+
+## 5A. Recommended variant: Phase 1 solo → Phase 2 ∥ Phase 3 → Phase 4
+
+This is a better shape than the generic wave plan above, and it's the one to use.
+
+**Verdict: yes, and Phase 2 ∥ Phase 3 is the cleanest pairing in the whole track.** Their file
+footprints are almost perfectly disjoint:
+
+| | Phase 2 (jobs) | Phase 3 (portfolio) |
+|---|---|---|
+| Touches | `render.yaml`, `src/cli.py`, job tests | `src/analysis/`, `src/services/`, `src/api/routers/`, all of `frontend/` |
+| Doesn't touch | anything under `frontend/`, any router | `src/cli.py`, `render.yaml` |
+| Shared files | **`src/config.py` only** (both may add settings) — and `pyproject.toml` if either adds a dep | |
+
+`src/cli.py` is the one file with real conflict potential, since `main()` builds every
+subcommand in a single `add_parser` block (`src/cli.py:35-41`) — but only Phase 2 goes near it,
+so it has one owner by construction.
+
+### Three refinements
+
+**1. Make it three worktrees, not two.** Phase 2 is ~1 week; Phase 3 is ~3. Splitting Phase 3
+into backend and frontend is where the actual wall-clock saving is — Phase 2 vs Phase 3 saves
+one week, Phase 3's own BE/UI split saves more.
+
+```
+  main ──● Phase 1 merged ──●  Phase 3 seam commit ──────────────●── merge
+          │                  │                                  ↗↗↗
+          ├─ wt-jobs ────────┼─ Phase 2, whole thing ───────────┘↗↗
+          │  (starts here —  │                                   ↗↗
+          │   needs no seam) ├─ wt-p3-api ─── services + router ┘↗
+          │                  │                                   ↗
+          │                  └─ wt-p3-ui ──── page + components ─┘
+```
+
+Note that **`wt-jobs` needs no seam commit** — it shares no append-point with Phase 3. So Phase
+2 can start the moment Phase 1 merges, in parallel with you *authoring* Phase 3's seam commit.
+That's a free head start.
+
+**2. Ship Phase 2 to production early — Phase 4 is gated on wall-clock, not code.** Phase 4
+diffs this week's correlations against last week's. Until the daily job has actually been
+running for a week or two, the regime-breaks feed has nothing to display, and you can't tell a
+working feed from a broken one.
+
+Two ways to handle it, and you want at least one:
+- **Merge and deploy Phase 2 as soon as it's green**, well before Phase 3 finishes, so history
+  accumulates while you build. This is the reason to run these in parallel rather than
+  sequentially — not the week saved, but the week of *data* gained.
+- **Give Phase 1's job an `--as-of DATE` backfill mode** so correlation rows can be generated
+  retroactively from the `prices` table, which already holds the history. Then Phase 4 isn't
+  wall-clock gated at all. Worth folding into Phase 1's solo wave if you want the option.
+
+**3. ⚠️ Watch the Yahoo rate limit — this pairing is the one that provokes it.** Phase 2's whole
+purpose is bulk-fetching the universe, and its agent will run the daily job repeatedly to test
+it. Phase 3's agent triggers fetches too. Both from one IP. `CLAUDE.md` flags this explicitly:
+yfinance hits Yahoo's unofficial API and **can get an IP rate-limited** — which then breaks
+*both* worktrees and looks like unrelated bugs in each.
+
+Mitigations, cheapest first:
+- Warm one price cache and share it. `data/cache/` is gitignored, so just copy it into each
+  worktree after the first full fetch.
+- Point both worktrees' `DATABASE_URL` at databases seeded from one backfill
+  (`python -m src.cli backfill-postgres`), so the TTL logic finds warm rows and never calls out.
+- Have the Phase 2 agent test against a 3–5 ticker subset rather than the full universe. Job
+  *correctness* doesn't need 59 tickers; job *timing* does, and that's a production measurement
+  anyway.
+
+### Phase 4 last
+
+Correct call. It depends on Phase 2's output and shares nothing with Phase 3, so there's no
+parallelism left to exploit by then — and by that point you want the daily job's real output in
+front of you before writing the detection thresholds. Split it BE/UI with its own seam commit
+if you want the two-worktree pattern again; it's a ~2 week phase, so the benefit is modest but
+real.
+
+### Net effect
+
+```
+  Phase 1  ██████                     1 wk   solo
+  Phase 2      ████                   1 wk   ┐ parallel
+  Phase 3      ████████████           3 wk   ┘ (BE ∥ UI inside)
+  Phase 4                  ████████   2 wk   solo-ish
+                                      ─────
+                                      ~7 wk  vs ~9 sequential
+```
+
+Plus Phase 4 starts with two months of accumulated correlation history instead of an empty
+table, which is worth more than the two weeks.
 
 ---
 
