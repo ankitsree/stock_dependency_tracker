@@ -6,6 +6,10 @@
 
 **Duration estimate:** 6–8 weeks for the full track at a sustainable pace.
 
+**Execution:** for building this with parallel worktrees and Claude CLI agents — which phases
+split safely, which must stay sequential, and how to keep merges trivial — see
+[track-a-worktree-plan.md](track-a-worktree-plan.md).
+
 ---
 
 ## Executive Summary
