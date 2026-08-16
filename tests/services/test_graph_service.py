@@ -67,15 +67,30 @@ def test_build_graph_excludes_all_anchors_from_each_others_candidate_pool():
     assert exclude_tickers == {"NVDA", "TSM", "ASML"}
 
 
-def test_build_graph_prefetches_prices_once_and_reuses_across_anchors():
+def test_build_graph_skips_prefetch_on_normal_read_path():
+    """Post Track A Phase 1 the graph is served from the `correlations`
+    table — no Yahoo fetches on the request path, so prefetching would
+    be wasted work. Only `force_refresh=True` re-runs the analytics stack
+    and pays the prefetch cost.
+    """
     correlation_service = _FakeCorrelationService({"NVDA": _ranked("SAT1"), "TSM": _ranked("SAT2")})
     graph_service = GraphService(correlation_service, _FakeCompanyRepository())
 
     graph_service.build_graph(["NVDA", "TSM"])
 
+    assert correlation_service.prefetch_calls == []
+    assert all(call[3] is None for call in correlation_service.calls)
+
+
+def test_build_graph_prefetches_prices_once_when_force_refresh():
+    correlation_service = _FakeCorrelationService({"NVDA": _ranked("SAT1"), "TSM": _ranked("SAT2")})
+    graph_service = GraphService(correlation_service, _FakeCompanyRepository())
+
+    graph_service.build_graph(["NVDA", "TSM"], force_refresh=True)
+
     # One prefetch for the whole build, not one per anchor — this is the fix
     # for the redundant per-anchor Yahoo downloads.
-    assert correlation_service.prefetch_calls == [(("NVDA", "TSM"), False)]
+    assert correlation_service.prefetch_calls == [(("NVDA", "TSM"), True)]
     assert all(call[3] == "PREFETCHED_PRICES" for call in correlation_service.calls)
 
 

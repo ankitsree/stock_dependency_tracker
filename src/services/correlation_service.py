@@ -35,7 +35,7 @@ from src.config import Config
 from src.domain.models import RankedSatellite
 from src.domain.serialization import dataframe_to_models
 from src.errors import InsufficientDataError, TickerNotFoundError
-from src.repositories.base import CompanyRepository, PriceRepository
+from src.repositories.base import CompanyRepository, CorrelationRepository, PriceRepository
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +62,17 @@ class CorrelationService:
         company_repo: CompanyRepository,
         config: Config,
         result_cache_ttl_seconds: float = 3600,
+        correlation_repo: CorrelationRepository | None = None,
     ):
         self._price_repo = price_repo
         self._company_repo = company_repo
         self._config = config
         self._result_cache_ttl_seconds = result_cache_ttl_seconds
         self._result_cache: dict[tuple, DiagnosticsResult] = {}
+        # None => no persistence layer; the service always computes live.
+        # Set => rank_with_full_diagnostics reads from stored snapshots first
+        # and falls back to live compute only when the repo has nothing.
+        self._correlation_repo = correlation_repo
 
     # -- Phase 1 equivalent --------------------------------------------------
 
@@ -128,12 +133,43 @@ class CorrelationService:
             if cached is not None and (time.time() - cached.generated_at.timestamp()) < self._result_cache_ttl_seconds:
                 return DiagnosticsResult(cached.anchor, cached.satellites, cached.generated_at, cache_hit=True)
 
+            # Precomputed snapshot (Track A Phase 1). Read path is a single
+            # index scan on `correlations`; the analytics stack never runs.
+            # Post-filter to respect the request's `top_n`/`threshold`/
+            # `exclude_tickers` — the job writes the widest possible ranking
+            # (config defaults), callers narrow it here.
+            stored = self._load_stored_snapshot(anchor, top_n, threshold, exclude_tickers)
+            if stored is not None:
+                self._result_cache[cache_key] = stored
+                return stored
+
         satellites = self._compute_full_diagnostics(
             anchor, exclude_tickers, top_n, threshold, force_refresh, prefetched_prices
         )
         result = DiagnosticsResult(anchor, satellites, dt.datetime.now(dt.timezone.utc), cache_hit=False)
         self._result_cache[cache_key] = result
         return result
+
+    def _load_stored_snapshot(
+        self,
+        anchor: str,
+        top_n: int,
+        threshold: float,
+        exclude_tickers: set[str] | None,
+    ) -> DiagnosticsResult | None:
+        if self._correlation_repo is None:
+            return None
+        snapshot = self._correlation_repo.get_latest(anchor, self._config.lookback_days)
+        if snapshot is None or snapshot.satellites.empty:
+            return None
+        satellites = snapshot.satellites
+        if exclude_tickers:
+            satellites = satellites[~satellites["ticker"].isin(exclude_tickers)]
+        # Same |r| >= threshold filter rank_top_n applies to live results, and
+        # the same top_n cap. Rows come back pre-sorted by rank (index scan
+        # on the DB), so head(top_n) is equivalent to re-ranking.
+        satellites = satellites[satellites["correlation"].abs() >= threshold].head(top_n)
+        return DiagnosticsResult(anchor, satellites.reset_index(drop=True), snapshot.computed_at, cache_hit=True)
 
     def prefetch_prices(self, anchors: list[str], force_refresh: bool = False) -> pd.DataFrame:
         """Fetch price history once for every ticker a `rank_with_full_diagnostics`

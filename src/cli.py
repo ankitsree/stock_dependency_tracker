@@ -11,6 +11,7 @@ shared helpers below.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import logging
 
 import pandas as pd
@@ -41,10 +42,18 @@ def main(argv: list[str] | None = None) -> None:
     subparsers.add_parser(
         "backfill-postgres", help="one-off: seed Postgres companies+prices from the hardcoded universe + yfinance"
     )
+    subparsers.add_parser(
+        "compute-correlations",
+        help="Track A Phase 1: recompute the full diagnostic stack for every configured anchor "
+        "and upsert into the `correlations` table (nightly job).",
+    )
     args = parser.parse_args(argv)
 
     if args.phase == "backfill-postgres":
         _run_backfill_postgres(load_config())
+        return
+    if args.phase == "compute-correlations":
+        _run_compute_correlations(load_config())
         return
 
     config = load_config()
@@ -262,6 +271,68 @@ def _run_backfill_postgres(config: Config) -> None:
     company_repo.get_market_data(all_tickers, force_refresh=True)
 
     print("Backfill complete.")
+
+
+def _run_compute_correlations(config: Config) -> None:
+    """Track A Phase 1 write path: run the full diagnostic stack once per
+    anchor and upsert the results into `correlations`. The graph endpoint
+    reads this table instead of running the analytics stack per request.
+
+    Prefetches prices once for the union of every anchor's universe so we
+    hit Yahoo once, not once per anchor — same optimisation the API's
+    GraphService uses for `force_refresh=True` requests.
+    """
+    if not config.database_url:
+        raise SystemExit(
+            "DATABASE_URL is not set; nothing to write to (see .env.example). "
+            "The compute-correlations job is Postgres-only by design."
+        )
+
+    from src.repositories.postgres.company_repository import PostgresCompanyRepository
+    from src.repositories.postgres.correlation_repository import PostgresCorrelationRepository
+    from src.repositories.postgres.db import make_engine, make_session_factory
+    from src.repositories.postgres.price_repository import PostgresPriceRepository
+
+    session_factory = make_session_factory(make_engine(config.database_url))
+    price_repo = PostgresPriceRepository(session_factory, config.data_dir / "cache", cache_ttl_seconds=None)
+    company_repo = PostgresCompanyRepository(session_factory, config.data_dir / "cache", cache_ttl_seconds=None)
+    correlation_repo = PostgresCorrelationRepository(session_factory)
+    correlation_service = CorrelationService(price_repo, company_repo, config)
+
+    computed_at = dt.datetime.now(dt.timezone.utc)
+    print(
+        f"Recomputing correlations for {len(config.anchors)} anchors "
+        f"(lookback={config.lookback_days}d, computed_at={computed_at.isoformat()})..."
+    )
+    # `force_refresh=True` on the prefetch so cache TTL never hides yesterday's
+    # prices from the nightly job; the analytics themselves don't need it.
+    prefetched_prices = correlation_service.prefetch_prices(config.anchors, force_refresh=True)
+
+    successes = 0
+    for anchor in config.anchors:
+        try:
+            result = correlation_service.rank_with_full_diagnostics(
+                anchor,
+                exclude_tickers=set(config.anchors),
+                force_refresh=True,
+                prefetched_prices=prefetched_prices,
+            )
+        except DomainError as exc:
+            print(f"  {anchor}: {exc}; skipping")
+            continue
+        if result.satellites.empty:
+            print(f"  {anchor}: no satellites met threshold {config.correlation_threshold}; nothing written")
+            continue
+        correlation_repo.upsert_snapshot(
+            anchor=anchor,
+            satellites=result.satellites,
+            lookback_days=config.lookback_days,
+            computed_at=computed_at,
+        )
+        successes += 1
+        print(f"  {anchor}: {len(result.satellites)} satellites persisted")
+
+    print(f"\nWrote correlations for {successes}/{len(config.anchors)} anchors.")
 
 
 def _graphed_tickers(active_anchors: list[str], anchor_rankings: dict[str, pd.DataFrame]) -> list[str]:

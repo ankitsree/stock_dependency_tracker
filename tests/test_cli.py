@@ -67,6 +67,12 @@ def _small_config(tmp_path) -> Config:
         regime_break_threshold=0.9,
         price_cache_ttl_seconds=3600,
         cors_allowed_origins=[],
+        # Passed explicitly, not left to default: `Config` is a pydantic-settings
+        # model, so an unset field falls through to the environment (or `.env`).
+        # CI's test job and a local `make up` both export DATABASE_URL, which
+        # would otherwise leak into this sandbox and point the CLI at a real
+        # database instead of tmp_path.
+        database_url=None,
     )
 
 
@@ -128,3 +134,14 @@ def test_unknown_anchor_exits_cleanly_with_message(sandbox):
         main(["phase1", "NODATA_TICKER"])
 
     assert "NODATA_TICKER" in str(exc_info.value)
+
+
+def test_compute_correlations_requires_database_url(sandbox):
+    """The Postgres-only compute-correlations job (Track A Phase 1) refuses
+    to run when DATABASE_URL is unset — writing to nothing would be silent
+    data loss, not a no-op.
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        main(["compute-correlations"])
+
+    assert "DATABASE_URL" in str(exc_info.value)

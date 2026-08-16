@@ -24,8 +24,9 @@ from fastapi import Depends
 from sqlalchemy.orm import sessionmaker
 
 from src.config import Config, load_config
-from src.repositories.base import CompanyRepository, PriceRepository
+from src.repositories.base import CompanyRepository, CorrelationRepository, PriceRepository
 from src.repositories.postgres.company_repository import PostgresCompanyRepository
+from src.repositories.postgres.correlation_repository import PostgresCorrelationRepository
 from src.repositories.postgres.db import make_engine, make_session_factory
 from src.repositories.postgres.price_repository import PostgresPriceRepository
 from src.repositories.yfinance_company_repository import YFinanceCompanyRepository
@@ -84,15 +85,28 @@ def get_company_service(company_repo: CompanyRepository = Depends(get_company_re
 
 
 @lru_cache
+def get_correlation_repository() -> CorrelationRepository | None:
+    """`None` when DATABASE_URL isn't set — CorrelationService then always
+    computes live. When Postgres is wired, the graph endpoint serves stored
+    snapshots (Track A Phase 1) written by `python -m src.cli compute-correlations`.
+    """
+    session_factory = get_session_factory()
+    if session_factory is None:
+        return None
+    return PostgresCorrelationRepository(session_factory)
+
+
+@lru_cache
 def get_correlation_service(
     price_repo: PriceRepository = Depends(get_price_repository),
     company_repo: CompanyRepository = Depends(get_company_repository),
+    correlation_repo: CorrelationRepository | None = Depends(get_correlation_repository),
 ) -> CorrelationService:
     # @lru_cache (not just a plain factory) matters here specifically:
     # CorrelationService holds an in-memory result cache as instance state,
     # which needs to survive across requests, not just across sub-dependency
     # construction.
-    return CorrelationService(price_repo, company_repo, get_config())
+    return CorrelationService(price_repo, company_repo, get_config(), correlation_repo=correlation_repo)
 
 
 def get_graph_service(

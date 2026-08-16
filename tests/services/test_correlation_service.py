@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import datetime as dt
 from pathlib import Path
 
 import numpy as np
@@ -6,6 +9,7 @@ import pytest
 
 from src.config import Config
 from src.errors import InsufficientDataError, TickerNotFoundError
+from src.repositories.base import CorrelationSnapshot
 from src.services.correlation_service import CorrelationService
 
 
@@ -87,10 +91,39 @@ def _config(**overrides) -> Config:
     return Config(**defaults)
 
 
-def _service(prices=None, universe=None, **config_overrides):
+def _service(prices=None, universe=None, correlation_repo=None, **config_overrides):
     price_repo = _FakePriceRepository(prices if prices is not None else _synthetic_prices())
     company_repo = _FakeCompanyRepository(universe if universe is not None else _universe())
-    return CorrelationService(price_repo, company_repo, _config(**config_overrides)), price_repo
+    service = CorrelationService(
+        price_repo, company_repo, _config(**config_overrides), correlation_repo=correlation_repo
+    )
+    return service, price_repo
+
+
+class _FakeCorrelationRepository:
+    """Enough of the CorrelationRepository Protocol to exercise the
+    service's "read stored snapshot, don't compute" path."""
+
+    def __init__(self, snapshot: CorrelationSnapshot | None = None):
+        self._snapshot = snapshot
+        self.upsert_calls = []
+        self.get_calls = []
+
+    def upsert_snapshot(self, anchor, satellites, lookback_days, computed_at):
+        self.upsert_calls.append((anchor, len(satellites), lookback_days, computed_at))
+
+    def get_latest(self, anchor, lookback_days):
+        self.get_calls.append((anchor, lookback_days))
+        return self._snapshot
+
+
+def _snapshot_with(satellites: pd.DataFrame) -> CorrelationSnapshot:
+    return CorrelationSnapshot(
+        anchor="ANCHOR",
+        lookback_days=150,
+        computed_at=dt.datetime(2026, 8, 15, 16, 0, tzinfo=dt.timezone.utc),
+        satellites=satellites,
+    )
 
 
 def test_rank_correlations_ranks_by_pearson_by_default():
@@ -224,3 +257,104 @@ def test_rank_with_full_diagnostics_prefetched_prices_missing_anchor_raises():
 
     with pytest.raises(TickerNotFoundError):
         service.rank_with_full_diagnostics("ANCHOR", prefetched_prices=prefetched)
+
+
+# --- Track A Phase 1: stored-snapshot read path ---------------------------
+
+
+def _stored_satellites():
+    """The shape the CorrelationRepository hands back — same columns
+    _compute_full_diagnostics produces, so the service treats a stored
+    snapshot and a fresh compute interchangeably."""
+    return pd.DataFrame(
+        [
+            {
+                "ticker": "SAT_HIGH",
+                "name": "High Corr Co",
+                "sector": "Semiconductors",
+                "correlation": 0.85,
+                "stability": 0.7,
+                "pearson_correlation": 0.82,
+                "partial_correlation": 0.5,
+                "sector_relative_correlation": 0.3,
+                "best_lag": 0,
+                "best_lag_correlation": 0.4,
+                "regime_break": False,
+                "regime_drift": 0.0,
+            },
+            {
+                "ticker": "SAT_LOW",
+                "name": "Low Corr Co",
+                "sector": "Semiconductors",
+                "correlation": 0.20,
+                "stability": 0.1,
+                "pearson_correlation": 0.20,
+                "partial_correlation": 0.1,
+                "sector_relative_correlation": 0.1,
+                "best_lag": 0,
+                "best_lag_correlation": 0.1,
+                "regime_break": False,
+                "regime_drift": 0.0,
+            },
+        ]
+    )
+
+
+def test_stored_snapshot_bypasses_live_compute():
+    repo = _FakeCorrelationRepository(_snapshot_with(_stored_satellites()))
+    service, price_repo = _service(correlation_repo=repo)
+
+    result = service.rank_with_full_diagnostics("ANCHOR")
+
+    assert result.cache_hit is True
+    assert price_repo.calls == []  # no yfinance/postgres round-trip needed
+    assert list(result.satellites["ticker"]) == ["SAT_HIGH"]  # SAT_LOW filtered by threshold=0.3
+
+
+def test_stored_snapshot_respects_threshold_override():
+    repo = _FakeCorrelationRepository(_snapshot_with(_stored_satellites()))
+    service, _ = _service(correlation_repo=repo)
+
+    result = service.rank_with_full_diagnostics("ANCHOR", threshold=0.1)
+
+    assert set(result.satellites["ticker"]) == {"SAT_HIGH", "SAT_LOW"}
+
+
+def test_stored_snapshot_respects_top_n_override():
+    repo = _FakeCorrelationRepository(_snapshot_with(_stored_satellites()))
+    service, _ = _service(correlation_repo=repo)
+
+    result = service.rank_with_full_diagnostics("ANCHOR", top_n=1, threshold=0.0)
+
+    assert len(result.satellites) == 1
+
+
+def test_stored_snapshot_respects_exclude_tickers():
+    repo = _FakeCorrelationRepository(_snapshot_with(_stored_satellites()))
+    service, _ = _service(correlation_repo=repo)
+
+    result = service.rank_with_full_diagnostics("ANCHOR", exclude_tickers={"SAT_HIGH"}, threshold=0.0)
+
+    assert "SAT_HIGH" not in list(result.satellites["ticker"])
+
+
+def test_force_refresh_bypasses_stored_snapshot():
+    repo = _FakeCorrelationRepository(_snapshot_with(_stored_satellites()))
+    service, price_repo = _service(correlation_repo=repo)
+
+    result = service.rank_with_full_diagnostics("ANCHOR", force_refresh=True)
+
+    assert result.cache_hit is False
+    assert len(price_repo.calls) > 0  # live compute pulled prices
+    assert repo.get_calls == []  # snapshot never consulted
+
+
+def test_missing_snapshot_falls_back_to_live_compute():
+    repo = _FakeCorrelationRepository(snapshot=None)
+    service, price_repo = _service(correlation_repo=repo)
+
+    result = service.rank_with_full_diagnostics("ANCHOR")
+
+    assert result.cache_hit is False
+    assert repo.get_calls == [("ANCHOR", 150)]
+    assert len(price_repo.calls) > 0
