@@ -67,6 +67,12 @@ def _small_config(tmp_path) -> Config:
         regime_break_threshold=0.9,
         price_cache_ttl_seconds=3600,
         cors_allowed_origins=[],
+        # Passed explicitly, not left to default: `Config` is a pydantic-settings
+        # model, so an unset field falls through to the environment (or `.env`).
+        # CI's test job and a local `make up` both export DATABASE_URL, which
+        # would otherwise leak into this sandbox and point the CLI at a real
+        # database instead of tmp_path.
+        database_url=None,
     )
 
 
