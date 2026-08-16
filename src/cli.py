@@ -15,6 +15,7 @@ import datetime as dt
 import logging
 
 import pandas as pd
+import sentry_sdk
 
 from src.config import Config, load_config
 from src.errors import DomainError
@@ -27,6 +28,12 @@ from src.visualisation.interactive import build_interactive_graph
 from src.visualisation.static_plot import plot_graph
 
 logger = logging.getLogger(__name__)
+
+# Scheduled jobs — the exact strings the Render Cron blueprint dispatches to.
+# Kept as constants so the CLI and render.yaml can't drift apart without at
+# least one of them failing loudly.
+DAILY_JOBS_COMMAND = "daily-jobs"
+WEEKLY_JOBS_COMMAND = "weekly-jobs"
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -44,16 +51,37 @@ def main(argv: list[str] | None = None) -> None:
     )
     subparsers.add_parser(
         "compute-correlations",
-        help="Track A Phase 1: recompute the full diagnostic stack for every configured anchor "
-        "and upsert into the `correlations` table (nightly job).",
+        help="Manual, ad-hoc invocation of the correlations recompute (same body as `daily-jobs`; "
+        "kept as a self-describing alias for one-off re-seeds).",
+    )
+    subparsers.add_parser(
+        DAILY_JOBS_COMMAND,
+        help="Track A Phase 2: scheduled entry point — refresh prices, recompute correlations, "
+        "upsert into the `correlations` table. Dispatched by Render Cron (see render.yaml).",
+    )
+    subparsers.add_parser(
+        WEEKLY_JOBS_COMMAND,
+        help="Track A Phase 2: scheduled weekly entry point. No-op until Phase 7 wires the "
+        "universe screener — the schedule and infra are declared now so nothing is left to "
+        "'remember to set up later'.",
     )
     args = parser.parse_args(argv)
+
+    # Sentry captures anything that escapes below — enabled for every command
+    # but only actually initialised when SENTRY_DSN is set, mirroring
+    # src/api/main.py. Free for interactive `phaseN` runs (no DSN in the
+    # dev shell), essential for the scheduled jobs (a crash at 4 AM UTC in a
+    # Render Cron log nobody watches is invisible without this).
+    _init_sentry_for_cli(load_config(), command=args.phase)
 
     if args.phase == "backfill-postgres":
         _run_backfill_postgres(load_config())
         return
-    if args.phase == "compute-correlations":
-        _run_compute_correlations(load_config())
+    if args.phase in {"compute-correlations", DAILY_JOBS_COMMAND}:
+        _run_with_sentry_flush(lambda: _run_daily_correlation_refresh(load_config()))
+        return
+    if args.phase == WEEKLY_JOBS_COMMAND:
+        _run_with_sentry_flush(lambda: _run_weekly_jobs(load_config()))
         return
 
     config = load_config()
@@ -273,10 +301,16 @@ def _run_backfill_postgres(config: Config) -> None:
     print("Backfill complete.")
 
 
-def _run_compute_correlations(config: Config) -> None:
-    """Track A Phase 1 write path: run the full diagnostic stack once per
-    anchor and upsert the results into `correlations`. The graph endpoint
-    reads this table instead of running the analytics stack per request.
+def _run_daily_correlation_refresh(config: Config) -> None:
+    """Track A Phase 1 write path / Phase 2 daily job body: run the full
+    diagnostic stack once per anchor and upsert the results into
+    `correlations`. The graph endpoint reads this table instead of running
+    the analytics stack per request.
+
+    Dispatched by Render Cron under the `daily-jobs` command (see
+    render.yaml) and callable directly as `compute-correlations` for
+    manual/one-off re-seeds — same body, two names, one Sentry breadcrumb
+    trail per run.
 
     Prefetches prices once for the union of every anchor's universe so we
     hit Yahoo once, not once per anchor — same optimisation the API's
@@ -285,7 +319,7 @@ def _run_compute_correlations(config: Config) -> None:
     if not config.database_url:
         raise SystemExit(
             "DATABASE_URL is not set; nothing to write to (see .env.example). "
-            "The compute-correlations job is Postgres-only by design."
+            "The daily correlation-refresh job is Postgres-only by design."
         )
 
     from src.repositories.postgres.company_repository import PostgresCompanyRepository
@@ -333,6 +367,58 @@ def _run_compute_correlations(config: Config) -> None:
         print(f"  {anchor}: {len(result.satellites)} satellites persisted")
 
     print(f"\nWrote correlations for {successes}/{len(config.anchors)} anchors.")
+
+
+def _run_weekly_jobs(config: Config) -> None:
+    """Track A Phase 2 weekly entry point — declared and scheduled now, empty
+    body today. Phase 7 (universe-roadmap.md) wires the screener-driven
+    universe rebuild here: fetch the screener output, diff against the
+    current `companies` table, upsert additions, mark removals inactive.
+    The schedule + the Render Cron declaration land in this phase so the
+    later change is drop-in.
+    """
+    logger.info("weekly-jobs: no work scheduled yet (Phase 7 will wire the universe rebuild).")
+    _ = config  # silence unused-arg warning; the config plug is intentional for the eventual body.
+
+
+def _init_sentry_for_cli(config: Config, command: str) -> None:
+    """Presence-gated Sentry init for CLI runs. Mirrors src/api/main.py's
+    behaviour and no-ops silently when SENTRY_DSN is unset, so interactive
+    `phaseN` runs from a dev shell stay quiet. `command` becomes the
+    transaction/tag so Render Cron runs show up in the Sentry UI grouped by
+    which job crashed instead of one undifferentiated blob.
+    """
+    if not config.sentry_dsn:
+        return
+    sentry_sdk.init(
+        dsn=config.sentry_dsn,
+        # Traces are cheap here (a handful of runs per day) and give
+        # per-anchor timing without extra instrumentation.
+        traces_sample_rate=1.0,
+        enable_logs=True,
+    )
+    # `set_tag` lets a filter in the Sentry UI split job runs by name; the
+    # transaction name is what shows up in the Performance view.
+    sentry_sdk.set_tag("cli_command", command)
+
+
+def _run_with_sentry_flush(func) -> None:
+    """Sentry's transport is async and buffered — a CLI process that exits
+    the microsecond after an event is captured can lose it. Explicit
+    `flush()` at exit is the documented way to guarantee delivery for
+    short-lived scripts (see Sentry Python SDK docs). No-op when Sentry
+    isn't initialised, so this is safe to wrap around every scheduled command.
+    """
+    try:
+        func()
+    except BaseException:
+        # Capture, then let it propagate — argparse's/Python's default handler
+        # still prints a traceback and exits non-zero, which is what Render Cron
+        # uses to mark the job as failed.
+        sentry_sdk.capture_exception()
+        raise
+    finally:
+        sentry_sdk.flush(timeout=5)
 
 
 def _graphed_tickers(active_anchors: list[str], anchor_rankings: dict[str, pd.DataFrame]) -> list[str]:
