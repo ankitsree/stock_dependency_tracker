@@ -15,7 +15,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from src.api import deps
 from src.api.errors import register_exception_handlers
 from src.api.rate_limit import limiter
-from src.api.routers import companies, correlations, graph, health, prices
+from src.api.routers import companies, correlations, graph, health, portfolio, prices
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,14 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
 
-    for router in (health.router, prices.router, companies.router, correlations.router, graph.router):
+    for router in (
+        health.router,
+        prices.router,
+        companies.router,
+        correlations.router,
+        graph.router,
+        portfolio.router,
+    ):
         app.include_router(router, prefix="/api")
 
     return app
