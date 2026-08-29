@@ -140,6 +140,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Portfolio */
+        post: operations["analyze_portfolio_api_portfolio_analyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -182,6 +199,19 @@ export interface components {
             /** Business Summary */
             business_summary?: string | null;
         };
+        /** ConcentrationMetrics */
+        ConcentrationMetrics: {
+            /** Herfindahl Index */
+            herfindahl_index: number;
+            /** Effective Factors */
+            effective_factors: number;
+            /** Top Factor */
+            top_factor?: string | null;
+            /** Top Factor Share */
+            top_factor_share: number;
+            /** Top Three Share */
+            top_three_share: number;
+        };
         /** CorrelationResponse */
         CorrelationResponse: {
             /** Anchor */
@@ -195,6 +225,23 @@ export interface components {
             generated_at: string;
             /** Cache Hit */
             cache_hit: boolean;
+        };
+        /**
+         * FactorExposure
+         * @description One slice of the variance pie. Shares across a response sum to 1.
+         */
+        FactorExposure: {
+            /** Factor */
+            factor: string;
+            /** Label */
+            label: string;
+            /** Share */
+            share: number;
+            /**
+             * Is Idiosyncratic
+             * @default false
+             */
+            is_idiosyncratic: boolean;
         };
         /** GraphEdge */
         GraphEdge: {
@@ -247,6 +294,72 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HoldingExposure
+         * @description A resolved holding: its weight in the portfolio, its correlation to each
+         *     anchor, and how much of its own variance the anchors jointly explain.
+         */
+        HoldingExposure: {
+            /** Ticker */
+            ticker: string;
+            /** Shares */
+            shares?: number | null;
+            /** Last Price */
+            last_price?: number | null;
+            /** Market Value */
+            market_value?: number | null;
+            /** Weight */
+            weight: number;
+            /** Correlations */
+            correlations: {
+                [key: string]: number | null;
+            };
+            /** R Squared */
+            r_squared: number;
+        };
+        /** PortfolioAnalysis */
+        PortfolioAnalysis: {
+            /** Anchors */
+            anchors: string[];
+            /** Holdings */
+            holdings: components["schemas"]["HoldingExposure"][];
+            /** Unresolved */
+            unresolved: components["schemas"]["UnresolvedHolding"][];
+            /** Weighting */
+            weighting: string;
+            /** Total Value */
+            total_value?: number | null;
+            /** Factor Exposure */
+            factor_exposure: components["schemas"]["FactorExposure"][];
+            concentration: components["schemas"]["ConcentrationMetrics"];
+            /** Risk Summary */
+            risk_summary: string[];
+            /** Lookback Days */
+            lookback_days: number;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+        };
+        /** PortfolioAnalyzeRequest */
+        PortfolioAnalyzeRequest: {
+            /** Holdings */
+            holdings: components["schemas"]["PortfolioHoldingInput"][];
+            /** Anchors */
+            anchors?: string[] | null;
+        };
+        /**
+         * PortfolioHoldingInput
+         * @description One line of a user's pasted holdings. `shares` is optional — without it
+         *     (for any holding) the whole portfolio falls back to equal weighting.
+         */
+        PortfolioHoldingInput: {
+            /** Ticker */
+            ticker: string;
+            /** Shares */
+            shares?: number | null;
         };
         /** PriceHistoryResponse */
         PriceHistoryResponse: {
@@ -305,6 +418,18 @@ export interface components {
             anchors: string[];
             /** Matrix */
             matrix: number[][];
+        };
+        /**
+         * UnresolvedHolding
+         * @description A ticker the user supplied that couldn't be analysed, with the reason —
+         *     surfaced rather than silently dropped, since a typo'd ticker vanishing
+         *     without a trace would quietly skew every percentage on the screen.
+         */
+        UnresolvedHolding: {
+            /** Ticker */
+            ticker: string;
+            /** Reason */
+            reason: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -572,6 +697,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RelatednessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_portfolio_api_portfolio_analyze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioAnalyzeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioAnalysis"];
                 };
             };
             /** @description Validation Error */

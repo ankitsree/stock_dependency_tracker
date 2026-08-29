@@ -59,10 +59,25 @@ export async function apiGet<T>(
   params?: Record<string, QueryValue>,
   signal?: AbortSignal,
 ): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}${buildQuery(params)}`, {
+  return request<T>(`${path}${buildQuery(params)}`, { signal, headers: { Accept: 'application/json' } })
+}
+
+/**
+ * POST with a JSON body. Used by the portfolio endpoint, which is a read but
+ * takes a holdings list — too long for a query string, and the user's own
+ * position data has no business in access logs or browser history.
+ */
+export async function apiPost<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, {
+    method: 'POST',
     signal,
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   })
+}
+
+async function request<T>(path: string, init: RequestInit): Promise<T> {
+  const response = await fetch(`${BASE_URL}${path}`, init)
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`
@@ -70,7 +85,9 @@ export async function apiGet<T>(
     try {
       const body = await response.json()
       detail = body
-      // The API's error bodies are { detail: string, ticker?: string }.
+      // The API's error bodies are { detail: string, ticker?: string }. FastAPI's
+      // own 422 validation errors put an array there instead, which must not be
+      // rendered as the user-facing message.
       if (typeof body?.detail === 'string') message = body.detail
     } catch {
       // Non-JSON error body — keep the generic message.

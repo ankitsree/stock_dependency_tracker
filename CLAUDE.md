@@ -42,6 +42,7 @@ src/
     returns.py               # log-returns
     correlation.py            # pearson/spearman, rolling, partial, lagged, sector-relative, regime
     ranking.py                 # top-N filtering, generic attach_metric()
+    portfolio.py                # Track A Phase 3: variance attribution across anchors (Pratt)
   graph/
     builder.py                # NetworkX graph construction
     queries.py                  # traversal/query helpers, JSON serialization
@@ -49,10 +50,10 @@ src/
     models.py                # framework-agnostic pydantic models shared by services + API
     serialization.py          # DataFrame -> pydantic models (NaN/inf -> None)
   services/                   # business logic: PriceService, CompanyService,
-                                # CorrelationService, GraphService
+                                # CorrelationService, GraphService, PortfolioService
   api/                         # FastAPI REST API
     main.py, deps.py, errors.py
-    routers/                    # prices, companies, correlations, graph, health
+    routers/                    # prices, companies, correlations, graph, portfolio, health
     schemas/                     # response envelopes
   visualisation/
     static_plot.py             # matplotlib
