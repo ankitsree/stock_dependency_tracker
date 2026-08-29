@@ -136,12 +136,81 @@ def test_unknown_anchor_exits_cleanly_with_message(sandbox):
     assert "NODATA_TICKER" in str(exc_info.value)
 
 
-def test_compute_correlations_requires_database_url(sandbox):
-    """The Postgres-only compute-correlations job (Track A Phase 1) refuses
-    to run when DATABASE_URL is unset — writing to nothing would be silent
-    data loss, not a no-op.
+@pytest.mark.parametrize("command", ["compute-correlations", "daily-jobs"])
+def test_correlation_refresh_commands_require_database_url(sandbox, command):
+    """The Postgres-only correlation-refresh job refuses to run when
+    DATABASE_URL is unset — writing to nothing would be silent data loss,
+    not a no-op. Both the scheduled name (`daily-jobs`) and the manual
+    alias (`compute-correlations`) share this guard, so both are
+    parametrised here.
     """
     with pytest.raises(SystemExit) as exc_info:
-        main(["compute-correlations"])
+        main([command])
 
     assert "DATABASE_URL" in str(exc_info.value)
+
+
+def test_weekly_jobs_runs_cleanly_without_database_url(sandbox, caplog):
+    """Phase 2 scaffolding — the weekly job's body is a no-op until Phase 7
+    wires the universe screener, but the command has to exit 0 today or
+    every Monday Render Cron run marks itself failed.
+    """
+    with caplog.at_level("INFO"):
+        main(["weekly-jobs"])
+
+    assert any("weekly-jobs" in record.message for record in caplog.records)
+
+
+def test_scheduled_jobs_flush_sentry_before_exit(sandbox, monkeypatch):
+    """`sentry_sdk.flush()` is what actually guarantees delivery for a
+    short-lived CLI process — the async transport can otherwise drop the
+    exit-time event. If someone removes the flush wrapper, this test fails
+    loudly instead of the failure only surfacing as "why did that 4 AM
+    crash never show up in Sentry?"
+    """
+    flush_calls = []
+    monkeypatch.setattr("src.cli.sentry_sdk.flush", lambda timeout=5: flush_calls.append(timeout))
+
+    main(["weekly-jobs"])
+
+    assert flush_calls, "sentry_sdk.flush() must run for every scheduled command"
+
+
+def test_sentry_not_initialised_without_dsn(sandbox, monkeypatch):
+    """Presence-gated init mirrors src/api/main.py — an interactive
+    `phaseN` dev run must never boot the Sentry SDK just because the CLI
+    imported the module.
+    """
+    init_calls = []
+    monkeypatch.setattr("src.cli.sentry_sdk.init", lambda **kw: init_calls.append(kw))
+
+    main(["weekly-jobs"])  # config from sandbox has no sentry_dsn.
+
+    assert init_calls == []
+
+
+def test_sentry_initialised_and_tagged_when_dsn_configured(sandbox, monkeypatch):
+    """When SENTRY_DSN is set, the CLI wires the SDK before running the
+    command so any escape gets captured. Command name lands in a
+    `cli_command` tag so job runs are filterable in the Sentry UI instead
+    of piling up under one undifferentiated transaction.
+    """
+    from src.cli import load_config as cli_load_config
+    from src.config import Config
+
+    dsn = "https://public@o0.ingest.us.sentry.io/0"
+    base_config_dict = cli_load_config().model_dump()
+    base_config_dict["sentry_dsn"] = dsn
+    monkeypatch.setattr("src.cli.load_config", lambda: Config(**base_config_dict))
+
+    init_calls = []
+    tag_calls = []
+    monkeypatch.setattr("src.cli.sentry_sdk.init", lambda **kw: init_calls.append(kw))
+    monkeypatch.setattr("src.cli.sentry_sdk.set_tag", lambda *args: tag_calls.append(args))
+
+    main(["weekly-jobs"])
+
+    assert len(init_calls) == 1
+    assert init_calls[0]["dsn"] == dsn
+    assert init_calls[0]["enable_logs"] is True
+    assert ("cli_command", "weekly-jobs") in tag_calls

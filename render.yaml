@@ -99,6 +99,67 @@ services:
     # Deliberately absent: PORT and a start command. Render injects PORT, and
     # the Dockerfile's CMD already binds ${PORT:-8000}.
 
+  # --- Scheduled jobs (Track A Phase 2) ----------------------------------
+  #
+  # Both cron jobs share the API's Docker image (same repo, same Dockerfile)
+  # and just override the container command. That's the whole reason to keep
+  # them in the same repo as the API — a rebuild picks up code changes
+  # transparently for every service, no separate image, no drift.
+  #
+  # PLAN NOTE: Render Cron Jobs require at least the `starter` plan; a `free`
+  # cron won't sync. Web service above can stay `free` independently. If the
+  # blueprint sync errors on plan mismatch, upgrade this pair and leave the
+  # web service alone.
+
+  - type: cron
+    name: stockdep-daily-jobs
+    runtime: docker
+    branch: main
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # 16:00 UTC ≈ US market close. Runs after prices settle so the fetched
+    # bars for "today" are actually today's, not intraday.
+    schedule: "0 16 * * *"
+    dockerCommand: python -m src.cli daily-jobs
+    envVars:
+      # Duplicated (not YAML-anchored) so a change here has to be a
+      # deliberate edit and the blueprint parser sees a flat list — Render's
+      # spec does not guarantee anchor merging semantics.
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stockdep-db
+          property: connectionString
+      - key: SENTRY_DSN
+        sync: false
+
+  - type: cron
+    name: stockdep-weekly-jobs
+    runtime: docker
+    branch: main
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Monday 02:00 UTC — off-peak everywhere, before markets open, and after
+    # the weekend Sunday-night deploys have settled. Body is a no-op until
+    # Phase 7 wires the universe rebuild; the schedule is declared now so
+    # nothing is left to "remember to set up later".
+    schedule: "0 2 * * 1"
+    dockerCommand: python -m src.cli weekly-jobs
+    envVars:
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stockdep-db
+          property: connectionString
+      - key: SENTRY_DSN
+        sync: false
+
 databases:
   - name: stockdep-db
     plan: basic-256mb
