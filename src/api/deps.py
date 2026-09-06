@@ -34,6 +34,7 @@ from src.repositories.yfinance_price_repository import YFinancePriceRepository
 from src.services.company_service import CompanyService
 from src.services.correlation_service import CorrelationService
 from src.services.graph_service import GraphService
+from src.services.portfolio_service import PortfolioService
 from src.services.price_service import PriceService
 
 
@@ -114,3 +115,10 @@ def get_graph_service(
     company_repo: CompanyRepository = Depends(get_company_repository),
 ) -> GraphService:
     return GraphService(correlation_service, company_repo)
+
+
+def get_portfolio_service(price_repo: PriceRepository = Depends(get_price_repository)) -> PortfolioService:
+    # No @lru_cache: PortfolioService holds no cross-request state (every
+    # analysis is transient by design), so there is nothing to preserve
+    # between requests the way CorrelationService's result cache needs.
+    return PortfolioService(price_repo, get_config())

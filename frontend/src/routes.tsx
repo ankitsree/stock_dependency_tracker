@@ -3,6 +3,7 @@ import { AppShell } from './components/layout/AppShell'
 import DashboardPage from './pages/DashboardPage'
 import AnchorDetailPage from './pages/AnchorDetailPage'
 import RelatednessPage from './pages/RelatednessPage'
+import PortfolioPage from './pages/PortfolioPage'
 
 export function AppRoutes() {
   return (
@@ -11,6 +12,7 @@ export function AppRoutes() {
         <Route index element={<DashboardPage />} />
         <Route path="anchor/:ticker" element={<AnchorDetailPage />} />
         <Route path="relatedness" element={<RelatednessPage />} />
+        <Route path="portfolio" element={<PortfolioPage />} />
       </Route>
     </Routes>
   )

@@ -30,8 +30,42 @@ function priceHistory(ticker: string) {
   }
 }
 
-/** Stubs every /api/* call the dashboard + detail panel make, so these smoke
- * tests never depend on a real backend, Yahoo Finance, or network access. */
+const PORTFOLIO_ANALYSIS = {
+  anchors: ['NVDA', 'AAPL'],
+  holdings: [
+    {
+      ticker: 'AMKR',
+      shares: 100,
+      last_price: 12.5,
+      market_value: 1250,
+      weight: 1,
+      correlations: { NVDA: 0.82, AAPL: 0.11 },
+      r_squared: 0.68,
+    },
+  ],
+  unresolved: [],
+  weighting: 'market_value',
+  total_value: 1250,
+  factor_exposure: [
+    { factor: 'NVDA', label: 'NVDA', share: 0.65, is_idiosyncratic: false },
+    { factor: 'AAPL', label: 'AAPL', share: 0.03, is_idiosyncratic: false },
+    { factor: 'idiosyncratic', label: 'Unexplained', share: 0.32, is_idiosyncratic: true },
+  ],
+  concentration: {
+    herfindahl_index: 0.53,
+    effective_factors: 1.9,
+    top_factor: 'NVDA',
+    top_factor_share: 0.65,
+    top_three_share: 0.68,
+  },
+  risk_summary: ['NVDA is your largest single exposure at 65% of portfolio variance.'],
+  lookback_days: 365,
+  generated_at: new Date().toISOString(),
+}
+
+/** Stubs every /api/* call the dashboard + detail panel + portfolio view make,
+ * so these smoke tests never depend on a real backend, Yahoo Finance, or
+ * network access. */
 export async function mockApi(page: Page) {
   await page.route('**/api/graph*', (route) => route.fulfill({ json: GRAPH }))
   await page.route('**/api/companies', (route) => route.fulfill({ json: COMPANIES }))
@@ -43,6 +77,7 @@ export async function mockApi(page: Page) {
     const ticker = new URL(route.request().url()).pathname.split('/').pop() ?? ''
     return route.fulfill({ json: priceHistory(ticker) })
   })
+  await page.route('**/api/portfolio/analyze', (route) => route.fulfill({ json: PORTFOLIO_ANALYSIS }))
   await page.route('**/api/anchors/*/correlations*', (route) =>
     route.fulfill({ json: { anchor: 'NVDA', satellites: [], generated_at: new Date().toISOString(), cache_hit: true } }),
   )

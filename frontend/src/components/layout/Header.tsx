@@ -19,6 +19,9 @@ export function Header() {
           <NavLink to="/relatedness" className={navLinkClass}>
             Relatedness
           </NavLink>
+          <NavLink to="/portfolio" className={navLinkClass}>
+            Portfolio
+          </NavLink>
         </nav>
       </div>
       <div className="flex items-center gap-3">

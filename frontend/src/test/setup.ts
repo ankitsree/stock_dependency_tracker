@@ -12,3 +12,22 @@ import { afterEach } from 'vitest'
 // every render in a file stacks up in the same jsdom document instead of
 // being unmounted between tests.
 afterEach(cleanup)
+
+// jsdom implements no CSS Object Model media queries, so `window.matchMedia`
+// simply doesn't exist there. ThemeProvider calls it during its very first
+// render to pick up the OS colour-scheme preference, which means any test
+// that renders a themed component crashes on mount without this. Always
+// reporting "not dark" makes the light theme the deterministic test default.
+if (typeof window !== 'undefined' && !window.matchMedia) {
+  window.matchMedia = (query: string): MediaQueryList =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList
+}
